@@ -1,10 +1,30 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>web</title>
+    <meta name="text-scale" content="scale" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('noticias-theme');
+          var preference =
+            stored === 'light' || stored === 'dark' ? stored : 'auto';
+          var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          document.documentElement.dataset.theme =
+            preference === 'auto' ? (dark ? 'dark' : 'light') : preference;
+        } catch (error) {
+          document.documentElement.dataset.theme = 'light';
+        }
+      })();
+    </script>
+    <meta
+      name="description"
+      content="Agregador de noticias argentinas: las principales notas de Clarín, La Nación, Página/12, TN, Ámbito, El Cronista, Perfil, C5N, La Voz, El Día, 0221 y Seúl."
+    />
+    <title>Noticias Argentinas</title>
   </head>
   <body>
     <div id="root"></div>
