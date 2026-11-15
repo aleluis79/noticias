@@ -1,18 +1,74 @@
+using System.Net;
+using NewsAggregator.Services;
+using NewsAggregator.Models;
+using Microsoft.OpenApi.Models;
+using Microsoft.Playwright;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+// Playwright is only used as a fallback for sources that render their news with
+// JavaScript, so the browser is launched lazily on first use.
+IPlaywright playwright = await Playwright.CreateAsync();
+
+// Register IPlaywright as a singleton
+builder.Services.AddSingleton<IPlaywright>(playwright);
+
+// Shared HTTP client used for the fast path (plain HTML requests).
+builder.Services.AddSingleton(_ =>
+{
+    var handler = new SocketsHttpHandler
+    {
+        AutomaticDecompression = DecompressionMethods.All,
+        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+        MaxConnectionsPerServer = 4
+    };
+
+    var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
+    client.DefaultRequestHeaders.UserAgent.ParseAdd(NewsAggregationService.UserAgent);
+    client.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+    client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("es-AR,es;q=0.9,en;q=0.8");
+    return client;
+});
+
+// Register NewsAggregationService once and expose it through its interface
+builder.Services.AddSingleton<NewsAggregationService>();
+builder.Services.AddSingleton<INewsAggregationService>(sp => sp.GetRequiredService<NewsAggregationService>());
+builder.Services.AddSingleton<ArticleContentService>();
+builder.Services.AddSingleton<IArticleContentService>(sp => sp.GetRequiredService<ArticleContentService>());
+
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo { Title = "News Aggregator API", Version = "v1" });
+});
+builder.Services.AddControllers();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("ReactFrontend",
+        policy => policy.WithOrigins(
+                            "http://localhost:5173", // Default Vite port
+                            "http://127.0.0.1:5173")
+                        .AllowAnyHeader()
+                        .AllowAnyMethod());
+});
 
 var app = builder.Build();
+
+// The HTTP client and the browser (when needed) are resolved lazily by the service.
+var newsService = app.Services.GetRequiredService<NewsAggregationService>();
+app.Lifetime.ApplicationStopping.Register(newsService.Dispose);
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.UseSwagger();
+    app.UseSwaggerUI();
 }
 
 app.UseHttpsRedirection();
+app.UseCors("ReactFrontend"); // Apply CORS policy
+app.UseAuthorization();
+app.MapControllers();
 
 var summaries = new[]
 {
@@ -21,7 +77,7 @@ var summaries = new[]
 
 app.MapGet("/weatherforecast", () =>
 {
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
+    var forecast = Enumerable.Range(1, 5).Select(index =>
         new WeatherForecast
         (
             DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
