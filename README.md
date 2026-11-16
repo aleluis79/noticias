@@ -86,12 +86,36 @@ En la raíz hay un `Makefile` con los comandos más habituales:
 | `make install` | Restaura paquetes .NET e instala las dependencias del frontend |
 | `make dev` | Levanta la API y el frontend juntos |
 | `make api` / `make web` | Levanta solo la API o solo el frontend |
+| `make start` | Levanta la app en segundo plano (sobrevive al cerrar la terminal/SSH) |
+| `make stop` / `make restart` | Detiene o reinicia la app en segundo plano |
+| `make status` / `make logs` | Muestra si está corriendo o sigue el log en vivo |
 | `make install-browser` | Instala Chromium para el fallback de Playwright |
 | `make test` | Ejecuta los tests de la API |
 | `make lint` | Ejecuta Oxlint sobre el frontend |
 | `make build` | Compila la API y el frontend |
 | `make check` | Ejecuta lint y tests |
 | `make clean` | Elimina `bin`, `obj` y `dist` |
+
+### Correr en un servidor (segundo plano)
+
+`make dev` queda atado a la terminal, así que al cerrar la sesión SSH se corta. Para dejarlo corriendo en un servidor:
+
+```bash
+make start    # lanza la app en segundo plano
+make status   # confirma que sigue viva
+make logs     # sigue la salida de API y frontend (Ctrl+C no la detiene)
+make stop     # la detiene
+```
+
+`make start` lanza todo en una sesión independiente (`setsid` + `nohup`), guarda el PID en `.run/app.pid` y escribe la salida en `.run/app.log`. Por eso el proceso sigue vivo aunque cierres la terminal o se caiga la conexión SSH, y `make stop` termina también los procesos hijos (`dotnet` y `vite`).
+
+Si abrís la app desde tu máquina, los puertos del servidor no son accesibles como `localhost`; usá un túnel SSH:
+
+```bash
+ssh -L 5173:localhost:5173 -L 5251:localhost:5251 usuario@servidor
+```
+
+Después entrá a `http://localhost:5173` en tu navegador. Tené en cuenta que `make start` no sobrevive a un reinicio del servidor: para eso conviene registrar la aplicación como servicio de `systemd` o lanzarla dentro de `tmux`/`screen`.
 
 ## API
 
