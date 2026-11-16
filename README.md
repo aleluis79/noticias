@@ -146,6 +146,8 @@ Después entrá a `http://localhost:5173` en tu navegador. Tené en cuenta que `
 | `GET` | `/api/news` | Devuelve los titulares agregados (caché de 5 minutos). |
 | `GET` | `/api/news?refresh=true` | Fuerza la re-descarga de todas las fuentes. |
 | `GET` | `/api/news/content?url={url}` | Extrae el autor y el cuerpo completo de una nota. Solo acepta URLs de las fuentes configuradas. |
+| `GET` | `/api/stories` | Agrupa los titulares en historias y devuelve la cobertura por medio. Es lo que consume la portada. |
+| `GET` | `/api/stories?refresh=true` | Igual que el anterior, salteando la caché. |
 
 Ejemplo:
 
@@ -169,6 +171,51 @@ Respuesta (fragmento):
 ```
 
 La caché de titulares se puede saltear con `refresh=true`; si todas las fuentes fallan, la API devuelve la última respuesta válida que tenga en memoria.
+
+### Historias y cobertura
+
+`/api/stories` agrupa los titulares que reportan el mismo hecho. Dos títulos se
+consideran la misma historia cuando comparten al menos tres palabras
+significativas y su similitud de conjunto de palabras llega a **0.50**; si hay
+duda, quedan separados. Es una regla conservadora a propósito: una fusión
+equivocada afirmaría que un medio cubrió algo que no cubrió.
+
+```bash
+curl http://localhost:5251/api/stories
+```
+
+```json
+{
+  "generatedAt": "2026-11-16T23:03:00Z",
+  "articleCount": 240,
+  "storyCount": 192,
+  "stories": [
+    {
+      "title": "El papa León XIV fue golpeado en un ojo con un decenario…",
+      "sourceName": "Clarín",
+      "sourceCount": 7,
+      "articleCount": 7,
+      "latestPublishedDate": null,
+      "sources": [
+        {
+          "sourceName": "Clarín",
+          "title": "El papa León XIV fue golpeado en un ojo…",
+          "originalUrl": "https://www.clarin.com/…",
+          "publishedDate": null
+        }
+      ]
+    }
+  ]
+}
+```
+
+`generatedAt` es la única hora que la portada muestra: `publishedDate` solo
+existe cuando el medio publica la fecha real en su JSON-LD, y nunca se rellena
+con la hora de la descarga.
+
+La portada muestra las historias con más de un medio en una matriz, y las notas
+de una sola voz en la banda de breves. El lector elige qué medio leer con los
+chips del panel de lectura.
 
 ## Fuentes soportadas
 
@@ -198,6 +245,23 @@ dotnet test api/api.csproj
 ```
 
 Usan xUnit, Moq y AngleSharp, y no necesitan lanzar un navegador real.
+
+### Banco de pruebas del agrupamiento
+
+El umbral de agrupamiento se calibra contra capturas reales del feed, no a ojo:
+
+```bash
+# con la API corriendo, guarda un snapshot del día en api/Tests/Fixtures/clustering/
+./tools/capture-clustering-snapshot.sh
+
+dotnet test api/api.csproj --filter FullyQualifiedName~ClusteringCorpusTests
+cat api/bin/Debug/net8.0/clustering-report.txt
+```
+
+`api/Tests/Fixtures/clustering/labels.json` contiene pares etiquetados a mano:
+los `same` tienen que compartir historia y los `different` tienen que quedar
+separados entre 0.50 y 0.60. Mover el umbral sin pasar por ese contrato rompe
+los tests. Corré un snapshot por día durante unos días antes de tocarlo.
 
 ## Cómo agregar una fuente
 

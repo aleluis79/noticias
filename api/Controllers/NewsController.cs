@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using NewsAggregator.Models;
 using NewsAggregator.Services;
+using NewsAggregator.Services.Grouping;
 
 [ApiController]
 [Route("api/news")]
@@ -8,13 +9,16 @@ public class NewsController : ControllerBase
 {
     private readonly INewsAggregationService _newsService;
     private readonly IArticleContentService _articleContentService;
+    private readonly IStoryGroupingService _storyGroupingService;
 
     public NewsController(
         INewsAggregationService newsService,
-        IArticleContentService articleContentService)
+        IArticleContentService articleContentService,
+        IStoryGroupingService storyGroupingService)
     {
         _newsService = newsService;
         _articleContentService = articleContentService;
+        _storyGroupingService = storyGroupingService;
     }
 
     /// <param name="refresh">Bypass the cache and re-fetch every source.</param>
@@ -29,6 +33,35 @@ public class NewsController : ControllerBase
         {
             // Log the error internally
             return StatusCode(500, $"An error occurred while fetching news: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Front-page view: articles grouped into the stories they report, each
+    /// story ordered by how many outlets cover it. <c>generatedAt</c> is the
+    /// only time the front page shows, so it is never mistaken for a
+    /// publication date.
+    /// </summary>
+    /// <param name="refresh">Bypass the cache and re-fetch every source.</param>
+    [HttpGet("/api/stories")]
+    public async Task<ActionResult<StoriesResponse>> GetStories([FromQuery] bool refresh = false)
+    {
+        try
+        {
+            var articles = (await _newsService.GetNewsAsync(refresh)).ToList();
+            var stories = _storyGroupingService.Group(articles);
+
+            return Ok(new StoriesResponse
+            {
+                GeneratedAt = DateTime.UtcNow,
+                ArticleCount = articles.Count,
+                StoryCount = stories.Count,
+                Stories = stories
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"An error occurred while grouping the news: {ex.Message}");
         }
     }
 
@@ -57,4 +90,12 @@ public class NewsController : ControllerBase
             return StatusCode(500, $"An error occurred while fetching the article: {ex.Message}");
         }
     }
+}
+
+public class StoriesResponse
+{
+    public DateTime GeneratedAt { get; set; }
+    public int ArticleCount { get; set; }
+    public int StoryCount { get; set; }
+    public IReadOnlyList<NewsStory> Stories { get; set; } = Array.Empty<NewsStory>();
 }

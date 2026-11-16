@@ -328,9 +328,10 @@ namespace NewsAggregator.Services.Parsers
                     Summary = summary,
                     OriginalUrl = url.ToString(),
                     SourceName = SourceName,
-                    // JSON-LD gives the real publication date when available; otherwise we
-                    // fall back to the retrieval time (home pages rarely expose it).
-                    PublishedDate = candidate.Published ?? DateTime.UtcNow
+                    // JSON-LD gives the real publication date when available;
+                    // home pages rarely expose it, and an unknown date stays
+                    // unknown instead of becoming the retrieval time.
+                    PublishedDate = candidate.Published
                 });
 
                 if (articles.Count >= MaxArticles)
@@ -629,7 +630,22 @@ namespace NewsAggregator.Services.Parsers
                 return null;
             }
 
-            var cleaned = WhitespaceRegex.Replace(value, " ").Trim();
+            // Some feeds ship HTML entities in their JSON-LD ("Newell&#x27;s"),
+            // sometimes double-encoded ("&amp;#x27;"). Decode until stable so
+            // they never reach the reader.
+            var decoded = value;
+            for (var pass = 0; pass < 2; pass++)
+            {
+                var next = System.Net.WebUtility.HtmlDecode(decoded);
+                if (next == decoded)
+                {
+                    break;
+                }
+
+                decoded = next;
+            }
+
+            var cleaned = WhitespaceRegex.Replace(decoded, " ").Trim();
             return cleaned.Length == 0 ? null : cleaned;
         }
 

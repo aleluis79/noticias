@@ -19,7 +19,6 @@ public class NewsArticleTests
         Assert.Equal(string.Empty, article.Summary);
         Assert.Equal(string.Empty, article.OriginalUrl);
         Assert.Equal(string.Empty, article.SourceName);
-        Assert.Equal(DateTimeKind.Utc, article.PublishedDate.Kind);
-        Assert.True((DateTime.UtcNow - article.PublishedDate).Duration() < TimeSpan.FromMinutes(1));
+        Assert.Null(article.PublishedDate);
     }
 }

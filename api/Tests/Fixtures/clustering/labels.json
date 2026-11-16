@@ -1,0 +1,62 @@
+{
+  "description": "Pares etiquetados a mano sobre los snapshots de api/Tests/Fixtures/clustering. 'same' exige que el umbral de producción los una; 'different' exige que ningún umbral entre 0.50 y 0.60 los una. Los títulos tienen que coincidir exactamente con el fixture.",
+  "same": [
+    {
+      "a": "El dólar oficial extendió las subas y quebró un nuevo récord, mientras que el blue alcanzó los $1.600",
+      "b": "El dólar no afloja y comenzó la semana con un nuevo récord",
+      "why": "Misma jornada cambiaria y mismo récord del blue."
+    },
+    {
+      "a": "Llegan cuatro nuevos Cedears de ETF para invertir en China, India, EEUU y empresas de inteligencia artificial",
+      "b": "Nuevos CEDEAR: cuáles son los cuatro instrumentos que llegan a BYMA y en qué mercados hot permiten invertir",
+      "why": "Los mismos cuatro instrumentos que llegan a BYMA."
+    },
+    {
+      "a": "El Gobierno volvió a registrar superávit fiscal en octubre y se encamina a cumplir con la meta pactada con el FMI",
+      "b": "El superávit primario alcanzó $1,9 billones en octubre y acumuló 1,4% del PBI, en línea con la meta del FMI",
+      "why": "Mismo dato fiscal de octubre."
+    },
+    {
+      "a": "El riesgo país superó los 850 y las acciones argentinas en Wall Street cayeron más de 7%",
+      "b": "El riesgo país abre la semana con una suba y las acciones cotizan a la baja",
+      "why": "Misma rueda: riesgo país arriba de 850 y acciones en baja."
+    },
+    {
+      "a": "El Presupuesto municipal 2027, con más de $570 mil millones y énfasis en obras",
+      "b": "La Plata ya tiene Presupuesto para 2027 y casi la mitad se destinará al área de obras y servicios",
+      "why": "El mismo presupuesto municipal de La Plata."
+    },
+    {
+      "a": "Atención. Alerta naranja por tormentas en Córdoba: ráfagas, granizo y lluvias para este lunes",
+      "b": "Tormentas en Córdoba. Se prevé una semana “cálida, húmeda e inestable” y con más lluvias",
+      "why": "El mismo evento meteorológico en Córdoba."
+    }
+  ],
+  "different": [
+    {
+      "a": "El papa León XIV fue golpeado en un ojo con un decenario cuando iba a dar su última misa en Perú",
+      "b": "Feliz y emocionado, León XIV cerró su gira con una multitudinaria misa en Lima y superó una prueba de fuego para su salud",
+      "why": "El golpe durante la misa y el balance de cierre de la gira son dos noticias distintas, del mismo medio."
+    },
+    {
+      "a": "El papa León XIV fue golpeado en un ojo con un decenario cuando iba a dar su última misa en Perú",
+      "b": "Revelan cuánto le costó la visita del Papa León XIV a la Provincia",
+      "why": "El episodio del golpe y el costo económico de la visita comparten tema, no hecho."
+    },
+    {
+      "a": "Lo que sienten los Papas",
+      "b": "León XIV cerró su gira sudamericana con una emotiva despedida en Perú y una prueba de salud superada",
+      "why": "Una nota de color sobre los papas no es el cierre de la gira."
+    },
+    {
+      "a": "Reforma electoral: cómo es el sistema de listas colectoras que negocia el Gobierno con sus aliados para suspender las PASO",
+      "b": "El riesgo país superó los 850 y las acciones argentinas en Wall Street cayeron más de 7%",
+      "why": "Política y mercados: sin relación."
+    },
+    {
+      "a": "El dólar no afloja y comenzó la semana con un nuevo récord",
+      "b": "El Gobierno volvió a registrar superávit fiscal en octubre y se encamina a cumplir con la meta pactada con el FMI",
+      "why": "Dólar y resultado fiscal son noticias distintas del mismo día."
+    }
+  ]
+}

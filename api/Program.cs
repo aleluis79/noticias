@@ -1,5 +1,6 @@
 using System.Net;
 using NewsAggregator.Services;
+using NewsAggregator.Services.Grouping;
 using NewsAggregator.Models;
 using Microsoft.OpenApi.Models;
 using Microsoft.Playwright;
@@ -35,6 +36,7 @@ builder.Services.AddSingleton<NewsAggregationService>();
 builder.Services.AddSingleton<INewsAggregationService>(sp => sp.GetRequiredService<NewsAggregationService>());
 builder.Services.AddSingleton<ArticleContentService>();
 builder.Services.AddSingleton<IArticleContentService>(sp => sp.GetRequiredService<ArticleContentService>());
+builder.Services.AddSingleton<IStoryGroupingService, StoryGroupingService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
