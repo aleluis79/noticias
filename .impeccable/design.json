@@ -1,0 +1,210 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-16T23:10:00Z",
+  "title": "Design System: Noticias Argentinas",
+  "extensions": {
+    "colorMeta": {
+      "warm-paper": {
+        "role": "neutral",
+        "displayName": "Papel Cálido",
+        "canonical": "#f6f2ea",
+        "tonalRamp": ["#0c0b08", "#2b2925", "#4a4742", "#6c6962", "#8e8c86", "#b3b1ac", "#d3d1cd", "#f0eeeb"]
+      },
+      "newsprint": {
+        "role": "neutral",
+        "displayName": "Papel de Tapa",
+        "canonical": "#fffdf8",
+        "tonalRamp": ["#0c0b09", "#2a2926", "#494844", "#6a6965", "#8d8c89", "#b2b1ae", "#d2d1ce", "#efeeec"]
+      },
+      "shaded-paper": {
+        "role": "neutral",
+        "displayName": "Papel Sombreado",
+        "canonical": "#efe9dd",
+        "tonalRamp": ["#0d0b07", "#2b2923", "#4b4740", "#6d685f", "#908c84", "#b4b1aa", "#d4d1cb", "#f1eee9"]
+      },
+      "ink-black": {
+        "role": "neutral",
+        "displayName": "Tinta Negra",
+        "canonical": "#1b1814",
+        "tonalRamp": ["#0c0b09", "#2b2826", "#4a4743", "#6c6864", "#8f8c88", "#b3b1ad", "#d3d0ce", "#f0eeec"]
+      },
+      "sepia-ink": {
+        "role": "neutral",
+        "displayName": "Tinta Sepia",
+        "canonical": "#6b6255",
+        "tonalRamp": ["#0e0b06", "#2d2821", "#4d473d", "#70685c", "#928b81", "#b6b0a7", "#d5d0c9", "#f2eee8"]
+      },
+      "press-red": {
+        "role": "primary",
+        "displayName": "Rojo Imprenta",
+        "canonical": "#ad2b20",
+        "tonalRamp": ["#250000", "#530302", "#802017", "#ae3f32", "#cd6c5e", "#eb988b", "#ffbdb1", "#ffded4"]
+      },
+      "press-red-deep": {
+        "role": "primary",
+        "displayName": "Rojo Imprenta Profundo",
+        "canonical": "#8a2018",
+        "tonalRamp": ["#220000", "#4d0f0a", "#792a21", "#a5483d", "#c47266", "#e39c91", "#fdc0b6", "#ffe1d8"]
+      },
+      "press-red-wash": {
+        "role": "primary",
+        "displayName": "Rojo Lavado",
+        "canonical": "#f6e3df",
+        "tonalRamp": ["#100908", "#302625", "#514442", "#736562", "#968986", "#b9aeac", "#d8cecd", "#f4eceb"]
+      },
+      "paper-rule": {
+        "role": "neutral",
+        "displayName": "Filete Papel",
+        "canonical": "#e3dbcd",
+        "tonalRamp": ["#0d0b06", "#2c2821", "#4c473e", "#6e685d", "#918b82", "#b5b0a8", "#d4d0c9", "#f1eee8"]
+      },
+      "rule-strong": {
+        "role": "neutral",
+        "displayName": "Filete Reforzado",
+        "canonical": "#cabfae",
+        "tonalRamp": ["#0e0b05", "#2e281f", "#4e473b", "#70685a", "#938b7f", "#b7b0a6", "#d6d0c7", "#f2eee7"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Solo el título de la cabecera." },
+      "headline": { "displayName": "Headline", "purpose": "Titulares de la matriz de cobertura." },
+      "reading-title": { "displayName": "Reading Title", "purpose": "Titular del medio elegido en el panel de lectura." },
+      "brief": { "displayName": "Brief", "purpose": "Notas de un solo medio, en breves y en el resto de la edición." },
+      "body": { "displayName": "Body", "purpose": "Párrafos de la nota extraída; escala con el control de lectura." },
+      "lede": { "displayName": "Lede", "purpose": "Subtítulo de la cabecera; único texto de lectura en sans." },
+      "label": { "displayName": "Label", "purpose": "Etiquetas de campo, leyenda de la matriz y cobertura." },
+      "action": { "displayName": "Action", "purpose": "Botones, chips accionables y enlaces de acción." }
+    },
+    "shadows": [
+      {
+        "name": "ambient-panel-light",
+        "value": "0 1px 2px rgb(27 24 20 / 5%), 0 18px 40px -28px rgb(27 24 20 / 45%)",
+        "purpose": "Única sombra del sistema; eleva el panel de lectura sobre la portada."
+      },
+      {
+        "name": "ambient-panel-dark",
+        "value": "0 1px 2px rgb(0 0 0 / 35%), 0 20px 44px -28px rgb(0 0 0 / 85%)",
+        "purpose": "La misma elevación sobre papel nocturno."
+      }
+    ],
+    "motion": [
+      { "name": "state", "value": "0.2s ease", "purpose": "Transición de color, borde y fondo en controles." },
+      { "name": "reveal", "value": "0.25s ease", "purpose": "Aparición del panel de lectura (opacidad 0 → 1, translateY -4px → 0)." },
+      { "name": "spin", "value": "0.8s linear infinite", "purpose": "Spinner de carga, siempre acompañado de texto." },
+      { "name": "reduced-motion", "value": "0.01ms !important", "purpose": "Todas las animaciones y transiciones bajo prefers-reduced-motion." }
+    ],
+    "breakpoints": [
+      { "name": "matrix-collapse", "value": "860px" },
+      { "name": "mobile", "value": "640px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Ghost Pill Button",
+      "kind": "button",
+      "refersTo": "pill-button",
+      "description": "La acción principal del sistema: píldora fantasma con borde hairline. No existe botón primario relleno.",
+      "html": "<button class=\"ds-pill\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M21 12a9 9 0 1 1-3-6.7\"/><path d=\"M21 3v6h-6\"/></svg>Actualizar</button>",
+      "css": ".ds-pill { display: inline-flex; align-items: center; gap: 0.45rem; min-block-size: 2.75rem; padding: 0.45rem 0.95rem; border: 1px solid var(--border-strong, #cabfae); border-radius: 999px; background: transparent; color: var(--text, #1b1814); font: inherit; font-size: 0.78rem; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease; } .ds-pill:hover { color: var(--accent, #ad2b20); border-color: var(--accent, #ad2b20); background: var(--accent-soft, #f6e3df); } .ds-pill:focus-visible { outline: 2px solid var(--accent, #ad2b20); outline-offset: 2px; }"
+    },
+    {
+      "name": "Source Chip",
+      "kind": "chip",
+      "refersTo": "source-chip",
+      "description": "Identifica el medio de una historia. Solo lectura en la matriz y en las breves.",
+      "html": "<span class=\"ds-chip\">La Nación</span>",
+      "css": ".ds-chip { display: inline-block; padding: 0.35rem 0.7rem; border-radius: 999px; background: var(--accent-soft, #f6e3df); color: var(--accent, #ad2b20); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }"
+    },
+    {
+      "name": "Source Chip Selected",
+      "kind": "chip",
+      "refersTo": "source-chip-selected",
+      "description": "Elige qué medio leer dentro de una historia; el activo invierte a rojo pleno.",
+      "html": "<div class=\"ds-chip-row\"><button class=\"ds-chip-btn\" aria-pressed=\"true\">Clarín</button><button class=\"ds-chip-btn\" aria-pressed=\"false\">La Nación</button><button class=\"ds-chip-btn\" aria-pressed=\"false\">TN</button></div>",
+      "css": ".ds-chip-row { display: flex; flex-wrap: wrap; gap: 0.4rem; } .ds-chip-btn { min-block-size: 2.75rem; padding: 0.4rem 0.85rem; border: 1px solid transparent; border-radius: 999px; background: var(--accent-soft, #f6e3df); color: var(--accent, #ad2b20); font: inherit; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; transition: border-color 0.2s ease, background-color 0.2s ease; } .ds-chip-btn:hover { border-color: var(--accent, #ad2b20); } .ds-chip-btn[aria-pressed='true'] { border-color: var(--accent, #ad2b20); background: var(--accent, #ad2b20); color: var(--surface, #fffdf8); } .ds-chip-btn:focus-visible { outline: 2px solid var(--accent, #ad2b20); outline-offset: 2px; }"
+    },
+    {
+      "name": "Filter Field",
+      "kind": "input",
+      "refersTo": "filter-field",
+      "description": "Búsqueda por título y selector de medio: fondo papel, borde hairline, radio 10px.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Buscar por título</span><input class=\"ds-input\" type=\"search\" placeholder=\"Milei, inflación, Boca…\" /></label>",
+      "css": ".ds-field { display: grid; gap: 0.35rem; } .ds-field-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted, #6b6255); } .ds-input { inline-size: 100%; min-block-size: 2.75rem; padding: 0.55rem 0.85rem; border: 1px solid var(--border-strong, #cabfae); border-radius: 10px; background: var(--surface, #fffdf8); color: var(--text, #1b1814); font: inherit; font-size: 1rem; } .ds-input::placeholder { color: var(--text-muted, #6b6255); } .ds-input:hover { border-color: var(--text-muted, #6b6255); } .ds-input:focus-visible { outline: 2px solid var(--accent, #ad2b20); outline-offset: 2px; }"
+    },
+    {
+      "name": "Matrix Row",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Una historia con su cobertura: titular como botón y doce puntos alineados a la leyenda.",
+      "html": "<div class=\"ds-row\"><div class=\"ds-row-story\"><h3 class=\"ds-row-title\"><button class=\"ds-row-open\">El papa León XIV fue golpeado en un ojo con un decenario</button></h3><p class=\"ds-row-coverage\">7 medios cubren esta historia</p></div><div class=\"ds-row-dots\"><span class=\"ds-dot on\"></span><span class=\"ds-dot on\"></span><span class=\"ds-dot\"></span><span class=\"ds-dot on\"></span><span class=\"ds-dot\"></span><span class=\"ds-dot\"></span><span class=\"ds-dot on\"></span><span class=\"ds-dot on\"></span><span class=\"ds-dot on\"></span><span class=\"ds-dot\"></span><span class=\"ds-dot on\"></span><span class=\"ds-dot on\"></span></div></div>",
+      "css": ".ds-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 24rem); align-items: center; gap: 1rem; padding-block: 0.95rem; border-block: 1px solid var(--border, #e3dbcd); } .ds-row-story { display: grid; gap: 0.35rem; } .ds-row-title { margin: 0; font-family: var(--font-serif, Georgia, serif); font-size: 1.2rem; font-weight: 600; line-height: 1.16; letter-spacing: -0.014em; } .ds-row-open { display: block; inline-size: 100%; min-block-size: 2.75rem; padding: 0.3rem 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; } .ds-row-open:hover { text-decoration: underline; text-underline-offset: 0.18em; } .ds-row-open:focus-visible { outline: 2px solid var(--accent, #ad2b20); outline-offset: 3px; } .ds-row-coverage { margin: 0; color: var(--accent, #ad2b20); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; } .ds-row-dots { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 0.2rem; justify-items: center; } .ds-dot { inline-size: 0.55rem; block-size: 0.55rem; border: 1px solid var(--border-strong, #cabfae); border-radius: 50%; background: transparent; } .ds-dot.on { border-color: var(--accent, #ad2b20); background: var(--accent, #ad2b20); }"
+    },
+    {
+      "name": "Reading Controls",
+      "kind": "custom",
+      "refersTo": "reading-control-pill",
+      "description": "Grupo segmentado de cuatro pasos de tamaño de lectura; el valor se anuncia con aria-live.",
+      "html": "<div class=\"ds-reading\"><span class=\"ds-reading-label\">Tamaño del texto</span><div class=\"ds-reading-group\" role=\"group\" aria-label=\"Tamaño del texto\"><button class=\"ds-reading-btn\" aria-label=\"Reducir el tamaño del texto\">A−</button><span class=\"ds-reading-value\" aria-live=\"polite\">100%</span><button class=\"ds-reading-btn\" aria-label=\"Aumentar el tamaño del texto\">A+</button></div></div>",
+      "css": ".ds-reading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 0.9rem; padding-block-end: 0.85rem; border-block-end: 1px dashed var(--border, #e3dbcd); } .ds-reading-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted, #6b6255); } .ds-reading-group { display: inline-flex; align-items: center; gap: 0.2rem; padding: 0.2rem; border: 1px solid var(--border-strong, #cabfae); border-radius: 999px; background: var(--surface, #fffdf8); } .ds-reading-btn { min-inline-size: 2.75rem; min-block-size: 2.75rem; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--text, #1b1814); font: inherit; font-size: 0.95rem; font-weight: 700; cursor: pointer; transition: background-color 0.2s ease, color 0.2s ease; } .ds-reading-btn:hover { background: var(--accent-soft, #f6e3df); color: var(--accent, #ad2b20); } .ds-reading-btn:focus-visible { outline: 2px solid var(--accent, #ad2b20); outline-offset: 2px; } .ds-reading-value { min-inline-size: 3.1rem; text-align: center; font-size: 0.76rem; font-weight: 650; color: var(--text-muted, #6b6255); font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Reader Panel",
+      "kind": "card",
+      "refersTo": "reader-panel",
+      "description": "La única superficie elevada: la nota completa con su medio, autor y salida al original.",
+      "html": "<section class=\"ds-reader\"><div class=\"ds-reader-bar\"><button class=\"ds-reader-back\">← Volver a la portada</button><span class=\"ds-reader-count\">7 medios</span></div><h2 class=\"ds-reader-title\">El papa León XIV fue golpeado en un ojo con un decenario cuando iba a dar su última misa en Perú</h2><p class=\"ds-reader-body\">El papa León XIV fue golpeado con un objeto en un ojo este lunes cuando se trasladaba en el papamóvil a dar la multitudinaria misa en la Base Aérea Las Palmas, en la ciudad peruana de Lima.</p><a class=\"ds-reader-link\" href=\"#\">Abrir en Clarín</a></section>",
+      "css": ".ds-reader { padding: 1.4rem 1.35rem 1.7rem; border: 1px solid var(--border-strong, #cabfae); border-radius: 16px; background: var(--surface, #fffdf8); box-shadow: 0 1px 2px rgb(27 24 20 / 5%), 0 18px 40px -28px rgb(27 24 20 / 45%); } .ds-reader-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block-end: 0.75rem; border-block-end: 1px dashed var(--border, #e3dbcd); } .ds-reader-back { min-block-size: 2.75rem; padding: 0.35rem 0; border: 0; background: none; color: var(--accent, #ad2b20); font: inherit; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer; } .ds-reader-back:hover { text-decoration: underline; } .ds-reader-count { color: var(--text-muted, #6b6255); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; } .ds-reader-title { max-inline-size: 68ch; margin: 1rem auto 1.1rem; font-family: var(--font-serif, Georgia, serif); font-size: 2rem; font-weight: 700; line-height: 1.1; letter-spacing: -0.025em; } .ds-reader-body { max-inline-size: 68ch; margin: 0 auto 1rem; font-family: var(--font-serif, Georgia, serif); font-size: 1.06rem; line-height: 1.7; color: var(--text, #1b1814); } .ds-reader-link { display: flex; align-items: center; justify-content: center; inline-size: fit-content; min-block-size: 2.75rem; margin: 1.2rem auto 0; padding: 0.6rem 1.1rem; border: 1px solid var(--border-strong, #cabfae); border-radius: 999px; color: var(--text, #1b1814); font-size: 0.82rem; font-weight: 650; text-decoration: none; } .ds-reader-link:hover { color: var(--accent, #ad2b20); border-color: var(--accent, #ad2b20); background: var(--accent-soft, #f6e3df); } .ds-reader-link:focus-visible { outline: 2px solid var(--accent, #ad2b20); outline-offset: 2px; }"
+    },
+    {
+      "name": "Empty State",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Bloque centrado para vacío, error y carga: título serif, texto a 48ch y píldora de reintento.",
+      "html": "<div class=\"ds-state\"><h2 class=\"ds-state-title\">Sin resultados</h2><p class=\"ds-state-text\">No encontramos historias que coincidan con el título elegido.</p><button class=\"ds-pill\">Limpiar filtros</button></div>",
+      "css": ".ds-state { display: grid; justify-items: center; gap: 0.9rem; padding: 4.5rem 1rem; text-align: center; color: var(--text-muted, #6b6255); } .ds-state-title { margin: 0; font-family: var(--font-serif, Georgia, serif); font-size: 1.6rem; font-weight: 600; letter-spacing: -0.015em; color: var(--text, #1b1814); } .ds-state-text { max-inline-size: 48ch; margin: 0; font-size: 0.95rem; line-height: 1.6; } .ds-pill { display: inline-flex; align-items: center; min-block-size: 2.75rem; padding: 0.45rem 0.95rem; border: 1px solid var(--border-strong, #cabfae); border-radius: 999px; background: transparent; color: var(--text, #1b1814); font: inherit; font-size: 0.78rem; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; } .ds-pill:hover { color: var(--accent, #ad2b20); border-color: var(--accent, #ad2b20); background: var(--accent-soft, #f6e3df); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "La Primera Plana",
+    "overview": "El sistema se comporta como la primera plana de una edición impresa sobre papel cálido: una cabecera con filete rojo, un cuerpo de historias ordenado por importancia y tipografía con serif para todo lo que se lee. No hay marco de aplicación, barra lateral ni widgets. La página entera es la edición del día.\n\nLa diferencia con un diario es que la edición es comparada. La portada abre con una matriz de historias por medio —las historias en filas, los doce medios en columnas, un punto por cada medio que cubre la historia— y las notas que trae un solo medio caen a una banda de breves. La pluralidad deja de ser una afirmación del texto y se vuelve geometría: quién cubre qué se lee antes de leer nada.\n\nEl tono es sereno y autoritativo, con densidad media. El rojo de imprenta aparece en dosis pequeñas y en tres trabajos concretos: filete de cabecera, etiquetas de cobertura y foco. La lectura manda sobre la interfaz: al abrir una historia, el panel de lectura ocupa el ancho completo, limita la medida a 68ch y el serif sube de tamaño con el control de lectura.",
+    "keyCharacteristics": [
+      "Papel cálido en dos tonos y tinta casi negra; sin blanco puro ni negro puro.",
+      "Serif editorial para títulos y cuerpo; sans en versalitas espaciadas para la interfaz.",
+      "Un solo acento, el Rojo Imprenta, usado en superficies pequeñas y en puntos de dato.",
+      "Separación por filetes de 1px; una sola sombra, reservada al panel de lectura.",
+      "Controles en forma de píldora con objetivos táctiles de 2.75rem como piso.",
+      "La cobertura de una historia es un dato visible, no un texto de marketing."
+    ],
+    "rules": [
+      { "name": "La Regla del Rojo Único", "body": "El acento ocupa menos del 10% del área de cualquier pantalla. Los puntos de cobertura son señal de dato y no cuentan como relleno: un punto de 9px no compite con una superficie. Lo que sigue prohibido es un botón primario relleno o cualquier bloque grande teñido de rojo.", "section": "colors" },
+      { "name": "La Regla sin Blanco Puro", "body": "Ningún fondo usa #fff. El papel más claro es Papel de Tapa (#fffdf8); el fondo de página es siempre Papel Cálido.", "section": "colors" },
+      { "name": "La Regla de las Dos Voces", "body": "Serif para contenido (títulos, cuerpo, breves); sans para interfaz (etiquetas, campos, botones). No se cruzan: un botón nunca se compone en serif y un párrafo nunca en versalitas.", "section": "typography" },
+      { "name": "La Regla del Titular Equilibrado", "body": "Todo titular usa text-wrap: balance y tracking negativo; todo párrafo usa text-wrap: pretty. El rag importa tanto como el tamaño.", "section": "typography" },
+      { "name": "La Regla del Piso Legible", "body": "Ninguna etiqueta funcional baja de 11px. La versalita más chica del sistema es 0.72rem (11.5px); por debajo, la etiqueta deja de ser legible y se vuelve textura.", "section": "typography" },
+      { "name": "La Regla del Filete Primero", "body": "Si hace falta separar dos bloques, se usa un filete de 1px (o punteado hacia adentro de una fila), no una sombra nueva. Solo existe una sombra en todo el sistema, y pertenece al panel de lectura.", "section": "elevation" },
+      { "name": "La Regla de la Píldora Accionable", "body": "Todo lo que se toca es una píldora; todo lo que se lee es un rectángulo de 16px. Un botón cuadrado o una tarjeta con radio de píldora rompe el sistema.", "section": "shapes" }
+    ],
+    "dos": [
+      "Do usar serif para títulos y cuerpo, y sans en versalitas espaciadas para etiquetas y controles.",
+      "Do mantener el fondo en Papel Cálido y las superficies en Papel de Tapa; el contraste entre ambos es la separación base.",
+      "Do reservar el Rojo Imprenta para señales pequeñas: filete, cobertura, chips, puntos, foco.",
+      "Do separar bloques con filetes de 1px o punteados antes de recurrir a una sombra.",
+      "Do respetar el mínimo táctil de 2.75rem en todo lo interactivo, incluidos los botones de texto.",
+      "Do limitar el cuerpo de la nota a 68ch y centrarlo, con el control de lectura en cuatro pasos (100–145%).",
+      "Do usar text-wrap: balance en titulares y pretty en párrafos.",
+      "Do conservar el anillo de foco de 2px con offset 2px en todo control interactivo.",
+      "Do decir la cobertura con precisión: \"7 medios cubren esta historia\" solo si son siete."
+    ],
+    "donts": [
+      "Don't rellenar botones o superficies grandes con el rojo de acento; no existe un botón primario sólido en este sistema.",
+      "Don't introducir blanco puro (#fff), negro puro (#000) ni grises fríos: rompen la temperatura del papel.",
+      "Don't agregar una segunda familia tipográfica ni mezclar serif en la interfaz.",
+      "Don't usar radios mayores a 16px en superficies ni esquinas rectas en elementos accionables.",
+      "Don't sumar sombras nuevas ni elevar filas de la matriz; la única sombra es la del panel de lectura.",
+      "Don't convertir la portada en un feed de red social: nada de scroll infinito, avatares, contadores de interacción, botones de reacción ni perfiles.",
+      "Don't usar versalitas ni tracking amplio en el cuerpo de la nota.",
+      "Don't bajar etiquetas funcionales de 11px.",
+      "Don't mostrar loaders sin texto que explique qué se está cargando."
+    ]
+  }
+}
