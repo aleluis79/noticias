@@ -76,6 +76,24 @@ El frontend queda en `http://localhost:5173`. La URL de la API está definida en
 | `pnpm lint` | Lint con Oxlint |
 | `pnpm preview` | Vista previa del build |
 
+## Docker
+
+La aplicación también puede ejecutarse con Docker Compose. La imagen de la API incluye Chromium y sus dependencias, así que el fallback de Playwright funciona sin instalar nada en el host.
+
+```bash
+docker compose up --build -d
+```
+
+- Frontend: `http://localhost:9090`
+- API directa: `http://localhost:5251`
+
+Nginx sirve el build de Vite y redirige `/api/` a la API, por lo que el navegador usa un único origen y no hace falta CORS. Para apuntar el frontend a otra API, cambiá `VITE_API_BASE` en los `build.args` del servicio `web` (vacío significa mismo origen).
+
+```bash
+docker compose logs -f   # seguir los logs
+docker compose down      # detener y eliminar los contenedores
+```
+
 ## Atajos con Make
 
 En la raíz hay un `Makefile` con los comandos más habituales:
@@ -95,6 +113,10 @@ En la raíz hay un `Makefile` con los comandos más habituales:
 | `make build` | Compila la API y el frontend |
 | `make check` | Ejecuta lint y tests |
 | `make clean` | Elimina `bin`, `obj` y `dist` |
+| `make docker-build` | Construye las imágenes de Docker |
+| `make docker-up` | Levanta la app con Docker en `http://localhost:9090` |
+| `make docker-down` | Detiene y elimina los contenedores |
+| `make docker-logs` | Sigue los logs de los contenedores |
 
 ### Correr en un servidor (segundo plano)
 

@@ -24,7 +24,8 @@ type ContentState =
   | { status: 'error' }
   | { status: 'ready'; paragraphs: string[]; author: string | null };
 
-const API_BASE = 'http://localhost:5251';
+// Empty in Docker builds so requests go through the nginx reverse proxy.
+const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:5251';
 
 type ThemePreference = 'auto' | 'light' | 'dark';
 

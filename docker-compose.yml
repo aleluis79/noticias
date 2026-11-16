@@ -1,0 +1,41 @@
+name: noticias
+
+services:
+  api:
+    build:
+      context: ./api
+    image: noticias-api:latest
+    container_name: noticias-api
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ASPNETCORE_ENVIRONMENT: Production
+    ports:
+      - "5251:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  web:
+    build:
+      context: ./web
+      args:
+        # Same-origin requests through the nginx proxy.
+        VITE_API_BASE: ""
+    image: noticias-web:latest
+    container_name: noticias-web
+    ports:
+      - "9090:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
