@@ -179,4 +179,4 @@ El endpoint de contenido valida automáticamente que la URL pertenezca a alguna 
 
 ## Licencia
 
-ISC.
+MIT.
