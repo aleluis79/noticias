@@ -1,14 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
-import type { SyntheticEvent } from 'react';
 import './App.css';
 
-// Shape returned by api/Models/NewsArticle.cs
-interface NewsArticle {
+// Shapes returned by GET /api/stories (api/Models/NewsStory.cs)
+interface StorySource {
+  sourceName: string;
+  title: string;
+  summary: string;
+  originalUrl: string;
+  publishedDate?: string | null;
+}
+
+interface Story {
+  id: string;
   title: string;
   summary: string;
   originalUrl: string;
   sourceName: string;
-  publishedDate?: string;
+  sourceCount: number;
+  articleCount: number;
+  latestPublishedDate?: string | null;
+  sources: StorySource[];
+}
+
+interface StoriesResponse {
+  generatedAt: string;
+  articleCount: number;
+  storyCount: number;
+  stories: Story[];
 }
 
 // Shape returned by GET /api/news/content
@@ -32,6 +50,10 @@ type ThemePreference = 'auto' | 'light' | 'dark';
 const THEME_STORAGE_KEY = 'noticias-theme';
 const NOTE_SIZE_STORAGE_KEY = 'noticias-reading-size';
 const NOTE_SCALES = [1, 1.15, 1.3, 1.45] as const;
+
+const MATRIX_ROWS = 6;
+const BREVES = 6;
+const PAGE_SIZE = 18;
 
 function parseThemePreference(value: string | null): ThemePreference {
   return value === 'light' || value === 'dark' ? value : 'auto';
@@ -87,14 +109,7 @@ const timeFormatter = new Intl.DateTimeFormat('es-AR', {
   hourCycle: 'h23',
 });
 
-const shortDateFormatter = new Intl.DateTimeFormat('es-AR', {
-  day: 'numeric',
-  month: 'short',
-});
-
-const todayLabel = capitalize(
-  fullDateFormatter.format(new Date()),
-);
+const todayLabel = capitalize(fullDateFormatter.format(new Date()));
 
 function capitalize(text: string) {
   return text.charAt(0).toUpperCase() + text.slice(1);
@@ -105,6 +120,47 @@ function normalizeText(value: string) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLocaleLowerCase('es');
+}
+
+/** The only time the front page shows: when the edition was fetched. */
+function editionTime(raw?: string) {
+  if (!raw) {
+    return null;
+  }
+
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : `${timeFormatter.format(date)} hs`;
+}
+
+/**
+ * Singletons arrive grouped by outlet because the API fetches source by
+ * source. Round-robin keeps one outlet from filling the whole breves band.
+ */
+function interleaveBySource(stories: Story[]): Story[] {
+  const buckets = new Map<string, Story[]>();
+  for (const story of stories) {
+    const bucket = buckets.get(story.sourceName);
+    if (bucket) {
+      bucket.push(story);
+    } else {
+      buckets.set(story.sourceName, [story]);
+    }
+  }
+
+  const interleaved: Story[] = [];
+  let added = true;
+  while (added) {
+    added = false;
+    for (const bucket of buckets.values()) {
+      const next = bucket.shift();
+      if (next) {
+        interleaved.push(next);
+        added = true;
+      }
+    }
+  }
+
+  return interleaved;
 }
 
 const GENERIC_AUTHORS = new Set([
@@ -141,32 +197,21 @@ function visibleAuthor(author: string | null | undefined, sourceName: string) {
   return author;
 }
 
-function formatArticleDate(raw?: string) {
-  if (!raw) {
-    return null;
-  }
-
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  const now = new Date();
-  if (date.toDateString() === now.toDateString()) {
-    return `${timeFormatter.format(date)} hs`;
-  }
-
-  return shortDateFormatter.format(date);
-}
-
 function App() {
-  const [news, setNews] = useState<NewsArticle[]>([]);
+  const [edition, setEdition] = useState<StoriesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+
+  const [openStoryId, setOpenStoryId] = useState<string | null>(null);
+  const [openSourceUrl, setOpenSourceUrl] = useState<string | null>(null);
   const [contents, setContents] = useState<Record<string, ContentState>>({});
+
   const [sourceFilter, setSourceFilter] = useState('all');
   const [titleFilter, setTitleFilter] = useState('');
+  const [visibleExtra, setVisibleExtra] = useState(PAGE_SIZE);
+
   const [themePreference, setThemePreference] =
     useState<ThemePreference>(initialThemePreference);
   const [noteSizeIndex, setNoteSizeIndex] =
@@ -174,31 +219,31 @@ function App() {
 
   const requestedContents = useRef(new Set<string>());
   const mounted = useRef(true);
+  const readerRef = useRef<HTMLElement | null>(null);
+  const openerRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     mounted.current = true;
     const controller = new AbortController();
 
-    const fetchNews = async () => {
+    const fetchStories = async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/news`, {
+        const response = await fetch(`${API_BASE}/api/stories`, {
           signal: controller.signal,
         });
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
-        const data: NewsArticle[] = await response.json();
-        setNews(data);
+        const data: StoriesResponse = await response.json();
+        setEdition(data);
         setError(null);
       } catch (e) {
         if (controller.signal.aborted) {
           return;
         }
-        console.error('Failed to fetch news:', e);
+        console.error('Failed to fetch the edition:', e);
         setError(
-          'No pudimos conectarnos con el servicio de noticias. Verificá que la API .NET esté corriendo en ' +
-            API_BASE +
-            '.',
+          'No pudimos conectarnos con el servicio de noticias. Probá de nuevo en unos minutos.',
         );
       } finally {
         if (!controller.signal.aborted) {
@@ -207,7 +252,7 @@ function App() {
       }
     };
 
-    void fetchNews();
+    void fetchStories();
 
     return () => {
       mounted.current = false;
@@ -281,32 +326,57 @@ function App() {
     return () => window.removeEventListener('storage', handleStorage);
   }, []);
 
-  const refreshNews = async () => {
-    setRefreshing(true);
+  useEffect(() => {
+    if (!openStoryId) {
+      return;
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+
+      setOpenStoryId(null);
+      setOpenSourceUrl(null);
+      openerRef.current?.focus({ preventScroll: true });
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [openStoryId]);
+
+  const loadEdition = async (refresh: boolean) => {
+    if (refresh) {
+      setRefreshing(true);
+      setRefreshError(null);
+    }
+
     try {
-      const response = await fetch(`${API_BASE}/api/news?refresh=true`);
+      const response = await fetch(
+        `${API_BASE}/api/stories${refresh ? '?refresh=true' : ''}`,
+      );
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      const data: NewsArticle[] = await response.json();
+      const data: StoriesResponse = await response.json();
       if (!mounted.current) {
         return;
       }
-      setNews(data);
+      setEdition(data);
       setError(null);
     } catch (e) {
-      console.error('Failed to refresh news:', e);
+      console.error('Failed to refresh the edition:', e);
+      if (!mounted.current) {
+        return;
+      }
+      setRefreshError(
+        'No pudimos actualizar la edición. Seguimos mostrando la que ya teníamos.',
+      );
     } finally {
-      if (mounted.current) {
+      if (mounted.current && refresh) {
         setRefreshing(false);
       }
     }
-  };
-
-  const retryInitialLoad = () => {
-    setLoading(true);
-    setError(null);
-    window.location.reload();
   };
 
   const loadContent = async (url: string) => {
@@ -352,93 +422,166 @@ function App() {
     }
   };
 
-  const handleToggle = (
-    event: SyntheticEvent<HTMLDetailsElement>,
-    url: string,
-  ) => {
-    if (event.currentTarget.open) {
-      void loadContent(url);
-    }
-  };
+  const stories = edition?.stories ?? [];
 
-  const sources = Array.from(new Set(news.map((article) => article.sourceName))).sort(
-    (a, b) => a.localeCompare(b, 'es'),
-  );
+  const sources = Array.from(
+    new Set(stories.flatMap((story) => story.sources.map((s) => s.sourceName))),
+  ).sort((a, b) => a.localeCompare(b, 'es'));
 
   const normalizedTitleFilter = normalizeText(titleFilter.trim());
-  const filteredNews = news.filter((article) => {
+  const filteredStories = stories.filter((story) => {
     const matchesSource =
-      sourceFilter === 'all' || article.sourceName === sourceFilter;
+      sourceFilter === 'all' ||
+      story.sources.some((source) => source.sourceName === sourceFilter);
     const matchesTitle =
       normalizedTitleFilter === '' ||
-      normalizeText(article.title).includes(normalizedTitleFilter);
+      normalizeText(story.title).includes(normalizedTitleFilter) ||
+      story.sources.some((source) =>
+        normalizeText(source.title).includes(normalizedTitleFilter),
+      );
 
     return matchesSource && matchesTitle;
   });
 
+  const clustered = filteredStories.filter((story) => story.sourceCount > 1);
+  const singleSource = interleaveBySource(
+    filteredStories.filter((story) => story.sourceCount === 1),
+  );
+
+  const matrixStories = clustered.slice(0, MATRIX_ROWS);
+  const breves = singleSource.slice(0, BREVES);
+  const extraStories = [
+    ...clustered.slice(MATRIX_ROWS),
+    ...singleSource.slice(BREVES),
+  ].slice(0, visibleExtra);
+
+  const hasMore = clustered.length - MATRIX_ROWS + singleSource.length - BREVES > visibleExtra;
   const hasFilters = sourceFilter !== 'all' || titleFilter.trim() !== '';
+  const filteredArticleCount = filteredStories.reduce(
+    (total, story) => total + story.articleCount,
+    0,
+  );
+  const totalArticleCount = edition?.articleCount ?? 0;
 
   const clearFilters = () => {
     setSourceFilter('all');
     setTitleFilter('');
   };
 
+  const openStory = (story: Story, opener: HTMLButtonElement) => {
+    openerRef.current = opener;
+    const first = story.sources[0];
+    setOpenStoryId(story.id);
+    setOpenSourceUrl(first.originalUrl);
+    void loadContent(first.originalUrl);
+    window.requestAnimationFrame(() => {
+      readerRef.current?.scrollIntoView({ block: 'start' });
+      readerRef.current?.focus({ preventScroll: true });
+    });
+  };
+
+  const closeStory = () => {
+    setOpenStoryId(null);
+    setOpenSourceUrl(null);
+    openerRef.current?.focus({ preventScroll: true });
+  };
+
+  const selectSource = (url: string) => {
+    setOpenSourceUrl(url);
+    void loadContent(url);
+  };
+
+  const openStoryData = openStoryId
+    ? stories.find((story) => story.id === openStoryId) ?? null
+    : null;
+  const openSource =
+    openStoryData?.sources.find((source) => source.originalUrl === openSourceUrl) ??
+    openStoryData?.sources[0] ??
+    null;
+  const openContent = openSource ? contents[openSource.originalUrl] : undefined;
+  const openAuthor =
+    openContent?.status === 'ready'
+      ? visibleAuthor(openContent.author, openSource?.sourceName ?? '')
+      : null;
+
+  const editionLabel = editionTime(edition?.generatedAt);
+
   return (
     <div className="app">
+      <a className="skip-link" href="#edicion">
+        Ir a las historias del día
+      </a>
+
       <header className="masthead">
-        <p className="masthead__eyebrow">Agregador · Edición del día</p>
-        <h1 className="masthead__title">Noticias Argentinas</h1>
+        <div className="masthead__top">
+          <h1 className="masthead__title">Noticias Argentinas</h1>
+          <p className="masthead__meta">
+            <span className="masthead__date">{todayLabel}</span>
+            {editionLabel && (
+              <span className="masthead__updated">
+                Actualizado {editionLabel}
+              </span>
+            )}
+          </p>
+        </div>
         <p className="masthead__subtitle">
-          Las principales notas de los diarios del país, reunidas en una sola
-          lectura.
+          Los titulares de los diarios del país, con la nota completa en el mismo
+          lugar.
         </p>
-        <div className="masthead__meta">
-          <span className="masthead__date">{todayLabel}</span>
-          <div className="masthead__actions">
-            <div className="theme-control">
-              <label className="theme-control__label" htmlFor="theme-select">
-                Tema
-              </label>
-              <select
-                id="theme-select"
-                name="theme"
-                className="theme-control__select"
-                value={themePreference}
-                onChange={(event) =>
-                  setThemePreference(event.target.value as ThemePreference)
-                }
-              >
-                <option value="auto">Automático</option>
-                <option value="light">Claro</option>
-                <option value="dark">Oscuro</option>
-              </select>
-            </div>
-            <button
-              type="button"
-              className="refresh-button"
-              onClick={() => void refreshNews()}
-              disabled={refreshing || loading}
-              data-loading={refreshing}
+        <div className="masthead__actions">
+          <div className="theme-control">
+            <label className="theme-control__label" htmlFor="theme-select">
+              Tema
+            </label>
+            <select
+              id="theme-select"
+              name="theme"
+              className="theme-control__select"
+              value={themePreference}
+              onChange={(event) =>
+                setThemePreference(event.target.value as ThemePreference)
+              }
             >
-              <svg
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M21 12a9 9 0 1 1-3-6.7" />
-                <path d="M21 3v6h-6" />
-              </svg>
-              {refreshing ? 'Actualizando…' : 'Actualizar'}
-            </button>
+              <option value="auto">Automático</option>
+              <option value="light">Claro</option>
+              <option value="dark">Oscuro</option>
+            </select>
           </div>
+          <button
+            type="button"
+            className="refresh-button"
+            onClick={() => void loadEdition(true)}
+            disabled={refreshing || loading}
+            data-loading={refreshing}
+            aria-label="Actualizar las noticias"
+            aria-busy={refreshing}
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 12a9 9 0 1 1-3-6.7" />
+              <path d="M21 3v6h-6" />
+            </svg>
+            {refreshing ? 'Actualizando…' : (
+              <span className="refresh-button__label">Actualizar</span>
+            )}
+          </button>
         </div>
       </header>
+
+      {refreshError && (
+        <p className="notice" role="status">
+          {refreshError}
+        </p>
+      )}
 
       <main>
         {loading ? (
@@ -446,19 +589,22 @@ function App() {
             <span className="spinner" aria-hidden="true" />
             <p className="state__text">Reuniendo las noticias del día…</p>
           </div>
-        ) : error && news.length === 0 ? (
+        ) : error && stories.length === 0 ? (
           <div className="state">
             <h2 className="state__title">No pudimos cargar las noticias</h2>
             <p className="state__text">{error}</p>
             <button
               type="button"
               className="refresh-button state__button"
-              onClick={retryInitialLoad}
+              onClick={() => {
+                setLoading(true);
+                void loadEdition(false);
+              }}
             >
               Reintentar
             </button>
           </div>
-        ) : news.length === 0 ? (
+        ) : stories.length === 0 ? (
           <div className="state">
             <h2 className="state__title">Sin noticias por ahora</h2>
             <p className="state__text">
@@ -468,7 +614,155 @@ function App() {
           </div>
         ) : (
           <>
-            <search className="filters" aria-label="Filtrar noticias">
+            {openStoryData && openSource && (
+              <section
+                className="reader"
+                ref={(node) => {
+                  readerRef.current = node;
+                }}
+                tabIndex={-1}
+                aria-labelledby="reader-title"
+              >
+                <div className="reader__bar">
+                  <button
+                    type="button"
+                    className="reader__back"
+                    onClick={closeStory}
+                  >
+                    ← Volver a la portada
+                  </button>
+                  <span className="reader__count">
+                    {openStoryData.sourceCount === 1
+                      ? 'Una sola voz'
+                      : `${openStoryData.sourceCount} medios`}
+                  </span>
+                </div>
+
+                {openStoryData.sources.length > 1 && (
+                  <div
+                    className="reader__sources"
+                    role="group"
+                    aria-label="Elegir el medio para leer esta historia"
+                  >
+                    {openStoryData.sources.map((source) => (
+                      <button
+                        key={source.originalUrl}
+                        type="button"
+                        className="chip chip--action"
+                        aria-pressed={
+                          source.originalUrl === openSource.originalUrl
+                        }
+                        onClick={() => selectSource(source.originalUrl)}
+                      >
+                        {source.sourceName}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <h2 id="reader-title" className="reader__title">
+                  {openSource.title}
+                </h2>
+
+                <div className="reading-controls">
+                  <span className="reading-controls__label">
+                    Tamaño del texto
+                  </span>
+                  <div
+                    className="reading-controls__group"
+                    role="group"
+                    aria-label="Tamaño del texto de la nota"
+                  >
+                    <button
+                      type="button"
+                      className="reading-controls__button"
+                      onClick={() =>
+                        setNoteSizeIndex((current) => Math.max(current - 1, 0))
+                      }
+                      disabled={noteSizeIndex === 0}
+                      aria-label="Reducir el tamaño del texto"
+                    >
+                      A−
+                    </button>
+                    <span
+                      className="reading-controls__value"
+                      aria-live="polite"
+                      aria-atomic="true"
+                    >
+                      {Math.round(NOTE_SCALES[noteSizeIndex] * 100)}%
+                    </span>
+                    <button
+                      type="button"
+                      className="reading-controls__button"
+                      onClick={() =>
+                        setNoteSizeIndex((current) =>
+                          Math.min(current + 1, NOTE_SCALES.length - 1),
+                        )
+                      }
+                      disabled={noteSizeIndex === NOTE_SCALES.length - 1}
+                      aria-label="Aumentar el tamaño del texto"
+                    >
+                      A+
+                    </button>
+                  </div>
+                </div>
+
+                {(!openContent || openContent.status === 'loading') && (
+                  <p className="reader__status" role="status">
+                    <span className="spinner" aria-hidden="true" />
+                    Cargando la nota completa…
+                  </p>
+                )}
+
+                {openContent?.status === 'error' && (
+                  <p className="reader__error" role="status">
+                    No pudimos extraer la nota completa de {openSource.sourceName}.
+                    Podés leerla en el medio original.
+                  </p>
+                )}
+
+                {openAuthor && (
+                  <p className="reader__author">
+                    <span className="reader__author-label">Por</span>{' '}
+                    {openAuthor}
+                  </p>
+                )}
+
+                {openContent?.status === 'ready' && (
+                  <div className="reader__content">
+                    {openContent.paragraphs.map((paragraph, index) => (
+                      <p key={index}>{paragraph}</p>
+                    ))}
+                  </div>
+                )}
+
+                <a
+                  href={openSource.originalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="reader__link"
+                >
+                  Abrir en {openSource.sourceName}
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M14 3h7v7" />
+                    <path d="M10 14 21 3" />
+                    <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
+                  </svg>
+                </a>
+              </section>
+            )}
+
+            <search className="filters" aria-label="Filtrar historias">
               <div className="filters__field">
                 <label className="filters__label" htmlFor="title-filter">
                   Buscar por título
@@ -508,10 +802,10 @@ function App() {
               </div>
 
               <div className="filters__footer">
-                <p className="filters__count" role="status">
-                  {filteredNews.length === news.length
-                    ? `${news.length} notas`
-                    : `${filteredNews.length} de ${news.length} notas`}
+                <p className="filters__count">
+                  {hasFilters
+                    ? `${filteredStories.length} de ${stories.length} historias · ${filteredArticleCount} de ${totalArticleCount} notas`
+                    : `${stories.length} historias · ${totalArticleCount} notas`}
                 </p>
                 {hasFilters && (
                   <button
@@ -525,187 +819,195 @@ function App() {
               </div>
             </search>
 
-            {filteredNews.length === 0 ? (
-              <div className="state">
-                <h2 className="state__title">Sin resultados</h2>
-                <p className="state__text">
-                  No encontramos notas que coincidan con el medio y el título
-                  elegidos.
-                </p>
-                <button
-                  type="button"
-                  className="refresh-button state__button"
-                  onClick={clearFilters}
-                >
-                  Limpiar filtros
-                </button>
-              </div>
-            ) : (
-              <div className="news-grid">
-                {filteredNews.map((article) => {
-              const content = contents[article.originalUrl];
-              const published = formatArticleDate(article.publishedDate);
-              const author =
-                content?.status === 'ready'
-                  ? visibleAuthor(content.author, article.sourceName)
-                  : null;
-
-              return (
-                <details
-                  key={article.originalUrl}
-                  className="news-card"
-                  onToggle={(event) =>
-                    handleToggle(event, article.originalUrl)
-                  }
-                >
-                  <summary className="news-card__summary">
-                    <span className="news-card__meta">
-                      <span className="news-card__source">
-                        {article.sourceName}
-                      </span>
-                      {published && (
-                        <time
-                          className="news-card__time"
-                          dateTime={article.publishedDate}
-                        >
-                          {published}
-                        </time>
-                      )}
-                    </span>
-                    <h2 className="news-card__title">{article.title}</h2>
-                    {article.summary && (
-                      <p className="news-card__excerpt">{article.summary}</p>
-                    )}
-                    <span className="news-card__toggle">
-                      <span className="news-card__toggle-text--closed">
-                        Leer la nota completa
-                      </span>
-                      <span className="news-card__toggle-text--open">
-                        Cerrar nota
-                      </span>
-                      <svg
-                        className="news-card__chevron"
-                        width="18"
-                        height="18"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <path d="m6 9 6 6 6-6" />
-                      </svg>
-                    </span>
-                  </summary>
-
-                  <div className="news-card__body">
-                    <div className="reading-controls">
-                      <span className="reading-controls__label">
-                        Tamaño del texto
-                      </span>
-                      <div
-                        className="reading-controls__group"
-                        role="group"
-                        aria-label="Tamaño del texto de la nota"
-                      >
-                        <button
-                          type="button"
-                          className="reading-controls__button"
-                          onClick={() =>
-                            setNoteSizeIndex((current) =>
-                              Math.max(current - 1, 0),
-                            )
-                          }
-                          disabled={noteSizeIndex === 0}
-                          aria-label="Reducir el tamaño del texto"
-                        >
-                          A−
-                        </button>
-                        <span
-                          className="reading-controls__value"
-                          aria-live="polite"
-                          aria-atomic="true"
-                        >
-                          {Math.round(NOTE_SCALES[noteSizeIndex] * 100)}%
-                        </span>
-                        <button
-                          type="button"
-                          className="reading-controls__button"
-                          onClick={() =>
-                            setNoteSizeIndex((current) =>
-                              Math.min(current + 1, NOTE_SCALES.length - 1),
-                            )
-                          }
-                          disabled={
-                            noteSizeIndex === NOTE_SCALES.length - 1
-                          }
-                          aria-label="Aumentar el tamaño del texto"
-                        >
-                          A+
-                        </button>
+            <div id="edicion">
+              {filteredStories.length === 0 ? (
+                <div className="state">
+                  <h2 className="state__title">Sin resultados</h2>
+                  <p className="state__text">
+                    No encontramos historias que coincidan con{' '}
+                    {sourceFilter !== 'all' && titleFilter.trim() !== ''
+                      ? 'el medio y el título elegidos'
+                      : sourceFilter !== 'all'
+                        ? 'el medio elegido'
+                        : 'el título elegido'}
+                    .
+                  </p>
+                  <button
+                    type="button"
+                    className="refresh-button state__button"
+                    onClick={clearFilters}
+                  >
+                    Limpiar filtros
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {matrixStories.length > 0 && (
+                    <section className="matrix" aria-labelledby="matrix-title">
+                      <div className="section-head">
+                        <h2 id="matrix-title" className="section-head__title">
+                          Las historias del día
+                        </h2>
+                        <p className="section-head__note">
+                          {clustered.length} historias con más de un medio
+                        </p>
                       </div>
-                    </div>
 
-                    {(!content || content.status === 'loading') && (
-                      <p className="news-card__status" role="status">
-                        <span className="spinner" aria-hidden="true" />
-                        Cargando la nota completa…
-                      </p>
-                    )}
+                      <div className="matrix__legend" aria-hidden="true">
+                        <span className="matrix__legend-spacer" />
+                        <div className="matrix__legend-items">
+                          {sources.map((source) => (
+                            <span key={source} className="matrix__legend-item">
+                              {source}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
 
-                    {content?.status === 'error' && (
-                      <p className="news-card__status news-card__status--error">
-                        No pudimos extraer la nota completa. Podés leerla
-                        directamente en {article.sourceName}.
-                      </p>
-                    )}
-
-                    {author && (
-                      <p className="news-card__author">
-                        <span className="news-card__author-label">Por</span>{' '}
-                        {author}
-                      </p>
-                    )}
-
-                    {content?.status === 'ready' && (
-                      <div className="news-card__content">
-                        {content.paragraphs.map((paragraph, index) => (
-                          <p key={index}>{paragraph}</p>
+                      <ol className="matrix__rows">
+                        {matrixStories.map((story) => (
+                          <li key={story.id} className="matrix__row">
+                            <div className="matrix__story">
+                              <h3 className="matrix__headline">
+                                <button
+                                  type="button"
+                                  className="matrix__open"
+                                  onClick={(event) =>
+                                    openStory(story, event.currentTarget)
+                                  }
+                                >
+                                  {story.title}
+                                </button>
+                              </h3>
+                              <p className="matrix__coverage">
+                                {story.sourceCount} medios cubren esta historia
+                              </p>
+                            </div>
+                            <div className="matrix__dots">
+                              {sources.map((source) => {
+                                const covers = story.sources.some(
+                                  (item) => item.sourceName === source,
+                                );
+                                return (
+                                  <span
+                                    key={source}
+                                    className={
+                                      covers ? 'dot dot--on' : 'dot'
+                                    }
+                                    title={
+                                      covers
+                                        ? `${source}: cubre esta historia`
+                                        : `${source}: no la cubre`
+                                    }
+                                  />
+                                );
+                              })}
+                            </div>
+                            <ul className="matrix__sources">
+                              {Array.from(
+                                new Set(
+                                  story.sources.map(
+                                    (item) => item.sourceName,
+                                  ),
+                                ),
+                              ).map((source) => (
+                                <li key={source} className="chip">
+                                  {source}
+                                </li>
+                              ))}
+                            </ul>
+                          </li>
                         ))}
-                      </div>
-                    )}
+                      </ol>
+                    </section>
+                  )}
 
-                    <a
-                      href={article.originalUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="news-card__link"
-                    >
-                      Abrir en {article.sourceName}
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <path d="M14 3h7v7" />
-                        <path d="M10 14 21 3" />
-                        <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
-                      </svg>
-                    </a>
-                  </div>
-                </details>
-              );
-                })}
-              </div>
-            )}
+                  {breves.length > 0 && (
+                    <section className="breves" aria-labelledby="breves-title">
+                      <div className="section-head">
+                        <h2 id="breves-title" className="section-head__title">
+                          Breves · una sola voz
+                        </h2>
+                        <p className="section-head__note">
+                          Notas que solo trae un medio
+                        </p>
+                      </div>
+                      <ul className="breves__grid">
+                        {breves.map((story) => (
+                          <li key={story.id} className="brief">
+                            <p className="brief__source">
+                              {story.sourceName}
+                            </p>
+                            <h3 className="brief__title">
+                              <button
+                                type="button"
+                                className="brief__open"
+                                onClick={(event) =>
+                                  openStory(story, event.currentTarget)
+                                }
+                              >
+                                {story.title}
+                              </button>
+                            </h3>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+
+                  {extraStories.length > 0 && (
+                    <section className="more" aria-labelledby="more-title">
+                      <div className="section-head">
+                        <h2 id="more-title" className="section-head__title">
+                          El resto de la edición
+                        </h2>
+                        <p className="section-head__note">
+                          {filteredStories.length} historias en total
+                        </p>
+                      </div>
+                      <ul className="more__list">
+                        {extraStories.map((story) => (
+                          <li key={story.id} className="more__item">
+                            <div className="more__meta">
+                              <span className="more__source">
+                                {story.sourceName}
+                              </span>
+                              {story.sourceCount > 1 && (
+                                <span className="more__count">
+                                  {story.sourceCount} medios
+                                </span>
+                              )}
+                            </div>
+                            <h3 className="more__title">
+                              <button
+                                type="button"
+                                className="more__open"
+                                onClick={(event) =>
+                                  openStory(story, event.currentTarget)
+                                }
+                              >
+                                {story.title}
+                              </button>
+                            </h3>
+                          </li>
+                        ))}
+                      </ul>
+                      {hasMore && (
+                        <button
+                          type="button"
+                          className="more__button"
+                          onClick={() =>
+                            setVisibleExtra((current) => current + PAGE_SIZE)
+                          }
+                        >
+                          Ver más historias
+                        </button>
+                      )}
+                    </section>
+                  )}
+                </>
+              )}
+            </div>
           </>
         )}
       </main>
