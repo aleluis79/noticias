@@ -4,10 +4,11 @@ Agregador de noticias que reúne los principales titulares de los diarios argent
 
 ## Características
 
-- Titulares de 12 medios argentinos en una única respuesta.
+- Titulares de 12 medios argentinos en una única respuesta (hasta 20 por medio).
 - Extracción mediante HTML estático y fallback a un navegador Chromium headless para los sitios que renderizan con JavaScript.
 - Caché en memoria de 5 minutos para los titulares y de 30 minutos para el cuerpo de cada nota.
 - Lectura completa de la nota dentro de la propia interfaz, extrayendo y limpiando los párrafos del artículo original.
+- Autor de la nota cuando el medio lo publica (se omite si la firma es solo el nombre del diario).
 - Filtros por medio y por título, tema claro/oscuro/automático y control del tamaño de lectura (persistidos en `localStorage`).
 - API REST documentada con Swagger en desarrollo.
 
@@ -75,13 +76,30 @@ El frontend queda en `http://localhost:5173`. La URL de la API está definida en
 | `pnpm lint` | Lint con Oxlint |
 | `pnpm preview` | Vista previa del build |
 
+## Atajos con Make
+
+En la raíz hay un `Makefile` con los comandos más habituales:
+
+| Comando | Qué hace |
+| --- | --- |
+| `make help` | Lista los objetivos disponibles |
+| `make install` | Restaura paquetes .NET e instala las dependencias del frontend |
+| `make dev` | Levanta la API y el frontend juntos |
+| `make api` / `make web` | Levanta solo la API o solo el frontend |
+| `make install-browser` | Instala Chromium para el fallback de Playwright |
+| `make test` | Ejecuta los tests de la API |
+| `make lint` | Ejecuta Oxlint sobre el frontend |
+| `make build` | Compila la API y el frontend |
+| `make check` | Ejecuta lint y tests |
+| `make clean` | Elimina `bin`, `obj` y `dist` |
+
 ## API
 
 | Método | Ruta | Descripción |
 | --- | --- | --- |
 | `GET` | `/api/news` | Devuelve los titulares agregados (caché de 5 minutos). |
 | `GET` | `/api/news?refresh=true` | Fuerza la re-descarga de todas las fuentes. |
-| `GET` | `/api/news/content?url={url}` | Extrae el cuerpo completo de una nota. Solo acepta URLs de las fuentes configuradas. |
+| `GET` | `/api/news/content?url={url}` | Extrae el autor y el cuerpo completo de una nota. Solo acepta URLs de las fuentes configuradas. |
 
 Ejemplo:
 

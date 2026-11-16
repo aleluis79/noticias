@@ -15,13 +15,14 @@ interface NewsArticle {
 interface ArticleContent {
   url: string;
   title: string;
+  author?: string;
   paragraphs: string[];
 }
 
 type ContentState =
   | { status: 'loading' }
   | { status: 'error' }
-  | { status: 'ready'; paragraphs: string[] };
+  | { status: 'ready'; paragraphs: string[]; author: string | null };
 
 const API_BASE = 'http://localhost:5251';
 
@@ -103,6 +104,40 @@ function normalizeText(value: string) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLocaleLowerCase('es');
+}
+
+const GENERIC_AUTHORS = new Set([
+  'redaccion',
+  'staff',
+  'newsroom',
+  'agencia',
+  'agencias',
+  'editorial',
+]);
+
+/**
+ * The byline is only useful when a person signs the note. Sources that publish
+ * the outlet itself as the author (e.g. "LA NACION" or "0221") add no information.
+ */
+function visibleAuthor(author: string | null | undefined, sourceName: string) {
+  if (!author) {
+    return null;
+  }
+
+  const normalizedAuthor = normalizeText(author).trim();
+  if (!normalizedAuthor || GENERIC_AUTHORS.has(normalizedAuthor)) {
+    return null;
+  }
+
+  const normalizedSource = normalizeText(sourceName).trim();
+  if (
+    normalizedAuthor === normalizedSource ||
+    normalizedAuthor.startsWith(`${normalizedSource} `)
+  ) {
+    return null;
+  }
+
+  return author;
 }
 
 function formatArticleDate(raw?: string) {
@@ -291,6 +326,7 @@ function App() {
 
       const data: ArticleContent = await response.json();
       const paragraphs = data.paragraphs ?? [];
+      const author = data.author?.trim() || null;
 
       if (!mounted.current) {
         return;
@@ -304,7 +340,7 @@ function App() {
 
       setContents((previous) => ({
         ...previous,
-        [url]: { status: 'ready', paragraphs },
+        [url]: { status: 'ready', paragraphs, author },
       }));
     } catch (e) {
       console.error('Failed to load the article body:', e);
@@ -508,6 +544,10 @@ function App() {
                 {filteredNews.map((article) => {
               const content = contents[article.originalUrl];
               const published = formatArticleDate(article.publishedDate);
+              const author =
+                content?.status === 'ready'
+                  ? visibleAuthor(content.author, article.sourceName)
+                  : null;
 
               return (
                 <details
@@ -618,6 +658,13 @@ function App() {
                       <p className="news-card__status news-card__status--error">
                         No pudimos extraer la nota completa. Podés leerla
                         directamente en {article.sourceName}.
+                      </p>
+                    )}
+
+                    {author && (
+                      <p className="news-card__author">
+                        <span className="news-card__author-label">Por</span>{' '}
+                        {author}
                       </p>
                     )}
 

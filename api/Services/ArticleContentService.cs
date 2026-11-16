@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using AngleSharp.Dom;
@@ -55,12 +56,59 @@ namespace NewsAggregator.Services
             "modal", "popup", "login", "registro", "encuesta"
         };
 
+        /// <summary>Meta tags that news sites use to publish the author of a note.</summary>
+        private static readonly string[] AuthorMetaSelectors =
+        {
+            "meta[name='author']",
+            "meta[property='article:author']",
+            "meta[property='og:article:author']",
+            "meta[name='parsely-author']",
+            "meta[name='sailthru.author']",
+            "meta[name='dc.creator']",
+            "meta[name='DC.creator']",
+            "meta[name='twitter:creator']"
+        };
+
+        /// <summary>Elements that news sites usually wrap the author byline in.</summary>
+        private static readonly string[] AuthorSelectors =
+        {
+            "[itemprop='author'] [itemprop='name']",
+            "[itemprop='author']",
+            "[rel='author']",
+            ".article-author__name",
+            ".author-name",
+            ".byline__name",
+            ".article__author",
+            ".article-author",
+            ".nota__autor",
+            ".nota-autor",
+            ".autor__firmante",
+            ".autor",
+            ".firma",
+            ".byline",
+            ".story-author",
+            ".post-author",
+            ".entry-author",
+            ".news-headline__author-name",
+            ".news-author-and-share__author-name"
+        };
+
+        /// <summary>Bylines that identify the newsroom instead of a person.</summary>
+        private static readonly string[] GenericAuthorValues =
+        {
+            "redaccion", "staff", "newsroom", "agencia", "agencias", "editorial"
+        };
+
+        private static readonly char[] AuthorSeparators = { '|', '•', '\n', '\r' };
+
         private static readonly char[] TokenSeparators =
         {
             ' ', '-', '_', ':', '/', '.', '[', ']', '(', ')', ',', '#'
         };
 
         private static readonly Regex WhitespaceRegex = new(@"\s+", RegexOptions.Compiled);
+
+        private static readonly Regex DiacriticsRegex = new(@"\p{Mn}+", RegexOptions.Compiled);
 
         private static readonly Regex BoilerplateRegex = new(
             @"^(le[ée] tambi[ée]n|te puede interesar|notas? relacionadas?|segu[íi] leyendo|seguir leyendo|suscrib|coment[áa]|compart[íi]|publicidad|foto|imagen|video|cr[ée]dito|todos los derechos|©|copyright|t[ée]rminos|pol[íi]tica de privacidad|recib[íi]|sumate|descarg[áa]|escuch[áa]|mir[áa]|entr[áa]|hac[ée] clic|clic aqu[íi])",
@@ -120,6 +168,7 @@ namespace NewsAggregator.Services
                 : new ArticleContent
                 {
                     Url = cacheKey,
+                    Author = html is null ? string.Empty : ExtractAuthor(html) ?? string.Empty,
                     Paragraphs = paragraphs
                 };
 
@@ -134,6 +183,189 @@ namespace NewsAggregator.Services
 
             return content;
         }
+
+        /// <summary>
+        /// Extracts the author byline from structured data, meta tags or the visible
+        /// byline. Returns null when the source does not publish one. Visible for tests.
+        /// </summary>
+        internal static string? ExtractAuthor(string html)
+        {
+            if (string.IsNullOrWhiteSpace(html))
+            {
+                return null;
+            }
+
+            var document = new HtmlParser().ParseDocument(html);
+
+            return ExtractJsonLdAuthor(document)
+                   ?? ExtractMetaAuthor(document)
+                   ?? ExtractBylineAuthor(document);
+        }
+
+        private static string? ExtractJsonLdAuthor(IDocument document)
+        {
+            foreach (var script in document.QuerySelectorAll("script[type='application/ld+json']"))
+            {
+                JsonDocument json;
+                try
+                {
+                    json = JsonDocument.Parse(script.TextContent);
+                }
+                catch (JsonException)
+                {
+                    continue;
+                }
+
+                using (json)
+                {
+                    foreach (var node in EnumerateJsonLdNodes(json.RootElement))
+                    {
+                        if (node.ValueKind != JsonValueKind.Object ||
+                            !node.TryGetProperty("author", out var author))
+                        {
+                            continue;
+                        }
+
+                        var name = ReadAuthorName(author);
+                        if (name is not null)
+                        {
+                            return name;
+                        }
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static string? ReadAuthorName(JsonElement author)
+        {
+            switch (author.ValueKind)
+            {
+                case JsonValueKind.String:
+                    return CleanAuthor(author.GetString());
+
+                case JsonValueKind.Object:
+                    return author.TryGetProperty("name", out var name) &&
+                           name.ValueKind == JsonValueKind.String
+                        ? CleanAuthor(name.GetString())
+                        : null;
+
+                case JsonValueKind.Array:
+                    var names = author
+                        .EnumerateArray()
+                        .Select(ReadAuthorName)
+                        .Where(name => name is not null)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+
+                    return names.Count > 0 ? string.Join(", ", names) : null;
+
+                default:
+                    return null;
+            }
+        }
+
+        private static string? ExtractMetaAuthor(IDocument document)
+        {
+            foreach (var selector in AuthorMetaSelectors)
+            {
+                foreach (var meta in document.QuerySelectorAll(selector))
+                {
+                    var name = CleanAuthor(meta.GetAttribute("content"));
+                    if (name is not null)
+                    {
+                        return name;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static string? ExtractBylineAuthor(IDocument document)
+        {
+            string? best = null;
+
+            foreach (var selector in AuthorSelectors)
+            {
+                foreach (var element in document.QuerySelectorAll(selector))
+                {
+                    var candidate = CleanAuthor(element.TextContent);
+                    if (candidate is null)
+                    {
+                        continue;
+                    }
+
+                    // Wrappers often include the name plus the author's beat or social
+                    // links; the shortest plausible text is usually the name itself.
+                    if (best is null || candidate.Length < best.Length)
+                    {
+                        best = candidate;
+                    }
+                }
+            }
+
+            return best;
+        }
+
+        private static string? CleanAuthor(string? value)
+        {
+            var cleaned = Clean(value);
+            if (cleaned is null)
+            {
+                return null;
+            }
+
+            // Some bylines add the date or the section after a separator.
+            cleaned = cleaned
+                .Split(AuthorSeparators, StringSplitOptions.RemoveEmptyEntries)
+                .FirstOrDefault()?
+                .Trim();
+
+            if (string.IsNullOrEmpty(cleaned))
+            {
+                return null;
+            }
+
+            if (cleaned.StartsWith("por ", StringComparison.OrdinalIgnoreCase))
+            {
+                cleaned = cleaned[4..].Trim();
+            }
+
+            // article:author meta tags sometimes point to a profile URL.
+            if (cleaned.Contains("://", StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            return IsPlausibleAuthor(cleaned) ? cleaned : null;
+        }
+
+        private static bool IsPlausibleAuthor(string value)
+        {
+            if (value.Length is < 3 or > 100 || char.IsDigit(value[0]))
+            {
+                return false;
+            }
+
+            var normalized = NormalizeAuthor(value);
+
+            if (GenericAuthorValues.Any(generic =>
+                    normalized == generic ||
+                    normalized.StartsWith(generic + " ", StringComparison.Ordinal)))
+            {
+                return false;
+            }
+
+            return !normalized.Contains("min de lectura", StringComparison.Ordinal) &&
+                   !normalized.Contains("minutos de lectura", StringComparison.Ordinal);
+        }
+
+        private static string NormalizeAuthor(string value) =>
+            DiacriticsRegex
+                .Replace(value.Normalize(NormalizationForm.FormD), string.Empty)
+                .ToLowerInvariant();
 
         /// <summary>
         /// Extracts the article body from a full page. Visible for tests.

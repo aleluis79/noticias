@@ -15,7 +15,7 @@ namespace NewsAggregator.Services.Parsers
     /// </summary>
     public abstract class HomePageParser : IParser
     {
-        private const int DefaultMaxArticles = 8;
+        private const int DefaultMaxArticles = 20;
 
         private static readonly Regex WhitespaceRegex = new(@"\s+", RegexOptions.Compiled);
         private static readonly Regex NonAlphanumericRegex = new(@"[^\p{L}\p{N}]+", RegexOptions.Compiled);

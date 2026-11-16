@@ -73,6 +73,107 @@ public class ArticleContentServiceTests
     }
 
     [Fact]
+    public void ExtractAuthor_ShouldReadTheJsonLdAuthor()
+    {
+        const string html = """
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+                <script type="application/ld+json">
+                {
+                    "@context": "https://schema.org",
+                    "@type": "NewsArticle",
+                    "headline": "Nota estructurada",
+                    "author": { "@type": "Person", "name": "Jazmín Bullorini" }
+                }
+                </script>
+            </head>
+            <body></body>
+            </html>
+            """;
+
+        var author = ArticleContentService.ExtractAuthor(html);
+
+        Assert.Equal("Jazmín Bullorini", author);
+    }
+
+    [Fact]
+    public void ExtractAuthor_ShouldReadTheMetaAuthorWhenThereIsNoStructuredData()
+    {
+        const string html = """
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+                <meta name="author" content="Mara Pedrazzoli">
+            </head>
+            <body></body>
+            </html>
+            """;
+
+        var author = ArticleContentService.ExtractAuthor(html);
+
+        Assert.Equal("Mara Pedrazzoli", author);
+    }
+
+    [Fact]
+    public void ExtractAuthor_ShouldReadTheVisibleByline()
+    {
+        const string html = """
+            <!DOCTYPE html>
+            <html lang="es">
+            <body>
+                <article>
+                    <div class="article__author">
+                        <span class="article__author">Nicolás Gonzalez Dior</span>
+                        <div>Periodista - Sección Política</div>
+                    </div>
+                </article>
+            </body>
+            </html>
+            """;
+
+        var author = ArticleContentService.ExtractAuthor(html);
+
+        Assert.Equal("Nicolás Gonzalez Dior", author);
+    }
+
+    [Fact]
+    public void ExtractAuthor_ShouldIgnoreNewsroomBylines()
+    {
+        const string html = """
+            <!DOCTYPE html>
+            <html lang="es">
+            <body>
+                <p class="autor__firmante">Por <strong>Redacción</strong></p>
+            </body>
+            </html>
+            """;
+
+        var author = ArticleContentService.ExtractAuthor(html);
+
+        Assert.Null(author);
+    }
+
+    [Fact]
+    public void ExtractAuthor_ShouldReturnNullWhenThereIsNoAuthor()
+    {
+        const string html = """
+            <!DOCTYPE html>
+            <html lang="es">
+            <body>
+                <article>
+                    <p>Texto de la nota sin firma publicada por el medio.</p>
+                </article>
+            </body>
+            </html>
+            """;
+
+        var author = ArticleContentService.ExtractAuthor(html);
+
+        Assert.Null(author);
+    }
+
+    [Fact]
     public void ExtractParagraphs_ShouldReturnEmptyWhenThereIsNoUsableText()
     {
         const string html = """

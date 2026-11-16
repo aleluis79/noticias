@@ -472,6 +472,23 @@
   font-variant-numeric: tabular-nums;
 }
 
+.news-card__author {
+  max-inline-size: 68ch;
+  margin: 0 auto 0.95rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.news-card__author-label {
+  margin-inline-end: 0.15rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
 .news-card__content {
   max-inline-size: 68ch;
   margin-inline: auto;
