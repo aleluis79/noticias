@@ -6,6 +6,7 @@ import {
   uninstallSpeech,
   type FakeSpeechHandle,
 } from './test/fakeSpeechSynthesis'
+import { FakeAudio } from './test/fakeAudio'
 
 const articleUrl = 'https://www.lanacion.com.ar/nota-1'
 const otherUrl = 'https://www.clarin.com/nota-2'
@@ -100,6 +101,9 @@ afterEach(() => {
   speech?.restore()
   speech = null
   uninstallSpeech()
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+  FakeAudio.reset()
 })
 
 async function openStoryAtArticle() {
@@ -172,6 +176,21 @@ describe('App speech integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Escuchar' }))
 
     expect(fetchMock.mock.calls.length).toBe(callsBefore)
+  })
+
+  it('uses local audio on Firefox instead of speech synthesis', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0',
+    )
+    vi.stubGlobal('Audio', FakeAudio)
+    await openStoryAtArticle()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Escuchar' }))
+
+    expect(FakeAudio.instances).toHaveLength(1)
+    expect(FakeAudio.instances[0].src).toContain('/api/news/audio')
+    expect(FakeAudio.instances[0].src).toContain('part=title')
+    expect(speech?.fake.spoken).toHaveLength(0)
   })
 
   it('hides the control when the browser has no speech synthesis', async () => {

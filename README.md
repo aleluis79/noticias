@@ -8,7 +8,7 @@ Agregador de noticias que reúne los principales titulares de los diarios argent
 - Extracción mediante HTML estático y fallback a un navegador Chromium headless para los sitios que renderizan con JavaScript.
 - Caché en memoria de 5 minutos para los titulares y de 30 minutos para el cuerpo de cada nota.
 - Lectura completa de la nota dentro de la propia interfaz, extrayendo y limpiando los párrafos del artículo original.
-- Reproducción por voz de la nota completa con la voz del navegador, con pausa, velocidad y elección de voz en español.
+- Reproducción por voz de la nota completa con pausa y velocidad. En Chrome y el resto se usa la voz del navegador; en Firefox, una voz neuronal generada localmente por la API.
 - Autor de la nota cuando el medio lo publica (se omite si la firma es solo el nombre del diario).
 - Filtros por medio y por título, tema claro/oscuro/automático y control del tamaño de lectura (persistidos en `localStorage`).
 - API REST documentada con Swagger en desarrollo.
@@ -78,7 +78,25 @@ El frontend queda en `http://localhost:5173`. La URL de la API está definida en
 | `pnpm lint` | Lint con Oxlint |
 | `pnpm preview` | Vista previa del build |
 
-La reproducción por voz usa `speechSynthesis` y las voces en español instaladas en el dispositivo; no depende de la API ni envía el texto a ningún servicio. La calidad de la voz cambia según el sistema operativo y no continúa con la pantalla bloqueada.
+En Chrome y el resto de los navegadores la reproducción usa `speechSynthesis` y las voces del dispositivo. En Firefox se usa la voz local de la API (Piper) porque las voces del sistema en Linux suenan robóticas; si la API no está disponible, vuelve sola a la voz del navegador. La reproducción no continúa con la pantalla bloqueada.
+
+## Voz local (Firefox)
+
+Firefox en Linux sintetiza con `speech-dispatcher`/espeak y suena robótico. Para ese navegador, la API genera el audio con **Piper** y una voz neuronal argentina, sin claves ni costos por uso.
+
+```bash
+make install-tts
+```
+
+El script descarga Piper y el modelo `es_AR-daniela-high` en `api/.tts/` (ignorado por git, unos 110 MB). La API lo detecta con la configuración por defecto; no hace falta configurar nada más. Si además instalás `ffmpeg`, el audio se sirve en MP3; si no está, se sirve WAV.
+
+- Endpoint: `GET /api/news/audio?url=...&part=title|attribution|body&index=N`.
+- Caché en disco por nota y segmento; los pedidos concurrentes comparten una sola síntesis.
+- Si faltan Piper o el modelo, la API responde 503 y Firefox usa la voz del navegador como antes.
+- Variables: `Tts__Enabled`, `Tts__PiperPath`, `Tts__ModelPath`, `Tts__FfmpegPath`, `Tts__CacheDirectory`, `Tts__MaxConcurrent`.
+- El modelo se entrenó con el dataset [OpenSLR 61](https://www.openslr.org/61/) (Attribution-ShareAlike 4.0) y se distribuye desde [`rhasspy/piper-voices`](https://huggingface.co/rhasspy/piper-voices).
+
+En Docker, Piper, `ffmpeg` y el modelo ya vienen en la imagen de la API, y la caché vive en el volumen `noticias-tts`.
 
 ## Docker
 
@@ -112,6 +130,7 @@ En la raíz hay un `Makefile` con los comandos más habituales:
 | `make stop` / `make restart` | Detiene o reinicia la app en segundo plano |
 | `make status` / `make logs` | Muestra si está corriendo o sigue el log en vivo |
 | `make install-browser` | Instala Chromium para el fallback de Playwright |
+| `make install-tts` | Descarga Piper y la voz argentina para el audio local |
 | `make test` | Ejecuta los tests de la API y del frontend |
 | `make test-api` / `make test-web` | Ejecuta solo los tests de la API o del frontend |
 | `make lint` | Ejecuta Oxlint sobre el frontend |
@@ -151,6 +170,7 @@ Después entrá a `http://localhost:5173` en tu navegador. Tené en cuenta que `
 | `GET` | `/api/news` | Devuelve los titulares agregados (caché de 5 minutos). |
 | `GET` | `/api/news?refresh=true` | Fuerza la re-descarga de todas las fuentes. |
 | `GET` | `/api/news/content?url={url}` | Extrae el autor y el cuerpo completo de una nota. Solo acepta URLs de las fuentes configuradas. |
+| `GET` | `/api/news/audio?url={url}&part=title\|attribution\|body&index={n}` | Devuelve el audio local de un segmento de la nota (Firefox). Requiere `make install-tts`. |
 | `GET` | `/api/stories` | Agrupa los titulares en historias y devuelve la cobertura por medio. Es lo que consume la portada. |
 | `GET` | `/api/stories?refresh=true` | Igual que el anterior, salteando la caché. |
 

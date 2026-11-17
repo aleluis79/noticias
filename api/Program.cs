@@ -1,7 +1,9 @@
 using System.Net;
 using NewsAggregator.Services;
 using NewsAggregator.Services.Grouping;
+using NewsAggregator.Services.Tts;
 using NewsAggregator.Models;
+using Microsoft.Extensions.Options;
 using Microsoft.OpenApi.Models;
 using Microsoft.Playwright;
 
@@ -37,6 +39,14 @@ builder.Services.AddSingleton<INewsAggregationService>(sp => sp.GetRequiredServi
 builder.Services.AddSingleton<ArticleContentService>();
 builder.Services.AddSingleton<IArticleContentService>(sp => sp.GetRequiredService<ArticleContentService>());
 builder.Services.AddSingleton<IStoryGroupingService, StoryGroupingService>();
+
+// Local Piper speech synthesis. Paths are resolved against the API content root
+// so `dotnet run` can use api/.tts without absolute configuration.
+builder.Services.AddOptions<TtsOptions>()
+    .Bind(builder.Configuration.GetSection("Tts"))
+    .PostConfigure(options => options.ResolvePaths(builder.Environment.ContentRootPath));
+builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
+builder.Services.AddSingleton<ITextToSpeechService, PiperTtsService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>

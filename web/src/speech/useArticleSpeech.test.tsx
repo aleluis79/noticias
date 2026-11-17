@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useArticleSpeech } from './useArticleSpeech'
 import {
   SPEECH_RATE_STORAGE_KEY,
@@ -197,5 +197,31 @@ describe('useArticleSpeech', () => {
     act(() => result.current.play())
 
     expect(fake.current()?.voice).toBe(nativeVoice)
+  })
+
+  it('uses the selected voice language instead of a hardcoded locale', () => {
+    window.localStorage.setItem(SPEECH_VOICE_STORAGE_KEY, 'es-419')
+    const { result, fake } = setup()
+
+    act(() => result.current.play())
+
+    expect(fake.current()?.lang).toBe('es-419')
+  })
+
+  it('uses longer fragments on Firefox to avoid cut-off speech', () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0',
+    )
+    const paragraph = 'Una oración de prueba con contenido suficiente. '.repeat(12).trim()
+    const { result, fake } = setup({ paragraphs: [paragraph] })
+
+    act(() => result.current.play())
+    act(() => fake.finish())
+    act(() => fake.finish())
+
+    const body = fake.spoken.filter((utterance) =>
+      utterance.text.startsWith('Una oración'),
+    )
+    expect(body).toHaveLength(1)
   })
 })

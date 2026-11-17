@@ -11,6 +11,8 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
     ports:
       - "5251:8080"
+    volumes:
+      - noticias-tts:/var/cache/noticias-tts
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
@@ -39,3 +41,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+volumes:
+  noticias-tts:

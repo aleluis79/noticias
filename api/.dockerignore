@@ -5,3 +5,4 @@ Tests/
 *.http
 .vs/
 .vscode/
+.tts/

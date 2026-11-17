@@ -61,6 +61,23 @@ namespace NewsAggregator.Services
                     StringComparison.OrdinalIgnoreCase));
         }
 
+        /// <summary>Human-readable outlet name for a supported article URL.</summary>
+        public static string? GetSourceNameForUrl(string? url)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            {
+                return null;
+            }
+
+            var source = Sources.FirstOrDefault(candidate =>
+                string.Equals(
+                    NormalizeHost(uri.Host),
+                    NormalizeHost(new Uri(candidate.Url).Host),
+                    StringComparison.OrdinalIgnoreCase));
+
+            return source?.ParserFactory().SourceName;
+        }
+
         private static string NormalizeHost(string host) =>
             host.StartsWith("www.", StringComparison.OrdinalIgnoreCase) ? host[4..] : host;
 

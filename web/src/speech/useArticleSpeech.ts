@@ -5,6 +5,7 @@ import {
   pickSpanishVoice,
   SPEECH_RATE_STORAGE_KEY,
   SPEECH_VOICE_STORAGE_KEY,
+  speechChunkSizeFor,
   type SpeechChunk,
   type SpeechRate,
   type VoiceLike,
@@ -181,9 +182,9 @@ export function useArticleSpeech({
     }
 
     const utterance = new window.SpeechSynthesisUtterance(chunk.text)
-    utterance.lang = 'es-AR'
-    utterance.rate = rateRef.current
     const selectedVoice = selectedVoiceRef.current
+    utterance.lang = selectedVoice?.lang ?? 'es-AR'
+    utterance.rate = rateRef.current
     if (selectedVoice) {
       const nativeVoice = nativeVoicesRef.current.find(
         (voice) => voice.voiceURI === selectedVoice.voiceURI,
@@ -234,7 +235,15 @@ export function useArticleSpeech({
       return
     }
 
-    const queue = buildSpeechQueue({ title, author, sourceName, paragraphs })
+    const userAgent =
+      typeof navigator === 'undefined' ? '' : navigator.userAgent
+    const queue = buildSpeechQueue({
+      title,
+      author,
+      sourceName,
+      paragraphs,
+      maxChunk: speechChunkSizeFor(userAgent),
+    })
     if (queue.length === 0) {
       return
     }

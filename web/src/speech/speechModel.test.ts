@@ -4,6 +4,7 @@ import {
   parseSpeechRate,
   pickSpanishVoice,
   SPEECH_RATES,
+  speechChunkSizeFor,
 } from './speechModel'
 
 describe('buildSpeechQueue', () => {
@@ -88,6 +89,50 @@ describe('buildSpeechQueue', () => {
     })
 
     expect(queue).toEqual([{ text: 'Solo esto.', paragraphIndex: 2 }])
+  })
+
+  it('accepts a larger chunk size for engines that do not truncate', () => {
+    const paragraph = 'Una oración de prueba con contenido suficiente. '.repeat(12).trim()
+
+    const defaultQueue = buildSpeechQueue({
+      title: 'Título',
+      author: null,
+      sourceName: 'TN',
+      paragraphs: [paragraph],
+    })
+    const largeQueue = buildSpeechQueue({
+      title: 'Título',
+      author: null,
+      sourceName: 'TN',
+      paragraphs: [paragraph],
+      maxChunk: 1000,
+    })
+
+    expect(
+      defaultQueue.filter((chunk) => chunk.paragraphIndex === 0).length,
+    ).toBeGreaterThan(1)
+    expect(
+      largeQueue.filter((chunk) => chunk.paragraphIndex === 0),
+    ).toHaveLength(1)
+  })
+})
+
+describe('speechChunkSizeFor', () => {
+  it('uses longer fragments on Firefox', () => {
+    expect(
+      speechChunkSizeFor(
+        'Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0',
+      ),
+    ).toBe(1000)
+  })
+
+  it('keeps the conservative fragment size elsewhere', () => {
+    expect(
+      speechChunkSizeFor(
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140.0 Safari/537.36',
+      ),
+    ).toBe(240)
+    expect(speechChunkSizeFor('')).toBe(240)
   })
 })
 

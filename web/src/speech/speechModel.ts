@@ -1,6 +1,13 @@
 /** Longest spoken fragment; short enough to pause promptly and avoid truncation. */
 export const MAX_SPEECH_CHUNK = 240
 
+/**
+ * Firefox delegates synthesis to the OS. Its engines handle long utterances
+ * without Chrome's truncation, and fewer boundaries mean fewer cut-offs when
+ * speech-dispatcher generates the audio.
+ */
+export const FIREFOX_MAX_SPEECH_CHUNK = 1000
+
 export const SPEECH_RATE_STORAGE_KEY = 'noticias-speech-rate'
 export const SPEECH_VOICE_STORAGE_KEY = 'noticias-speech-voice'
 
@@ -57,6 +64,12 @@ export function pickSpanishVoice(
   return best ?? null
 }
 
+export function speechChunkSizeFor(userAgent: string): number {
+  return /firefox/i.test(userAgent)
+    ? FIREFOX_MAX_SPEECH_CHUNK
+    : MAX_SPEECH_CHUNK
+}
+
 export function parseSpeechRate(value: string | null): SpeechRate {
   if (value === null || value === '') {
     return 1
@@ -71,6 +84,7 @@ export interface SpeechQueueInput {
   author?: string | null
   sourceName: string
   paragraphs: string[]
+  maxChunk?: number
 }
 
 export interface SpeechChunk {
@@ -92,14 +106,14 @@ function splitSentences(text: string): string[] {
   return text.split(/(?<=[.!?…])\s+/)
 }
 
-function splitLongSentence(sentence: string): string[] {
+function splitLongSentence(sentence: string, maxChunk: number): string[] {
   const pieces: string[] = []
   let rest = sentence
 
-  while (rest.length > MAX_SPEECH_CHUNK) {
-    const window = rest.slice(0, MAX_SPEECH_CHUNK + 1)
+  while (rest.length > maxChunk) {
+    const window = rest.slice(0, maxChunk + 1)
     const cut = window.lastIndexOf(' ')
-    const index = cut > 0 ? cut : MAX_SPEECH_CHUNK
+    const index = cut > 0 ? cut : maxChunk
     pieces.push(rest.slice(0, index).trim())
     rest = rest.slice(index).trim()
   }
@@ -111,7 +125,11 @@ function splitLongSentence(sentence: string): string[] {
   return pieces
 }
 
-function chunkParagraph(text: string, paragraphIndex: number): SpeechChunk[] {
+function chunkParagraph(
+  text: string,
+  paragraphIndex: number,
+  maxChunk: number,
+): SpeechChunk[] {
   const chunks: SpeechChunk[] = []
   let current = ''
 
@@ -128,16 +146,16 @@ function chunkParagraph(text: string, paragraphIndex: number): SpeechChunk[] {
       continue
     }
 
-    if (sentence.length > MAX_SPEECH_CHUNK) {
+    if (sentence.length > maxChunk) {
       push()
-      for (const piece of splitLongSentence(sentence)) {
+      for (const piece of splitLongSentence(sentence, maxChunk)) {
         chunks.push({ text: piece, paragraphIndex })
       }
       continue
     }
 
     const candidate = current ? `${current} ${sentence}` : sentence
-    if (candidate.length <= MAX_SPEECH_CHUNK) {
+    if (candidate.length <= maxChunk) {
       current = candidate
     } else {
       push()
@@ -158,6 +176,7 @@ export function buildSpeechQueue({
   author,
   sourceName,
   paragraphs,
+  maxChunk = MAX_SPEECH_CHUNK,
 }: SpeechQueueInput): SpeechChunk[] {
   const queue: SpeechChunk[] = []
   const cleanTitle = normalize(title)
@@ -182,7 +201,7 @@ export function buildSpeechQueue({
   paragraphs.forEach((paragraph, index) => {
     const clean = normalize(paragraph)
     if (clean) {
-      queue.push(...chunkParagraph(clean, index))
+      queue.push(...chunkParagraph(clean, index, maxChunk))
     }
   })
 

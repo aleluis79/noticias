@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import './App.css';
 import { ListeningControls } from './speech/ListeningControls';
-import { useArticleSpeech } from './speech/useArticleSpeech';
+import { useArticlePlayback } from './speech/useArticlePlayback';
 
 // Shapes returned by GET /api/stories (api/Models/NewsStory.cs)
 interface StorySource {
@@ -575,7 +575,7 @@ function App() {
       ? visibleAuthor(openContent.author, openSource?.sourceName ?? '')
       : null;
 
-  const speech = useArticleSpeech({
+  const speech = useArticlePlayback({
     articleKey: openSource?.originalUrl ?? null,
     title: openSource?.title ?? '',
     author: openAuthor,
@@ -583,6 +583,7 @@ function App() {
     paragraphs:
       openContent?.status === 'ready' ? openContent.paragraphs : [],
     enabled: openContent?.status === 'ready',
+    endpoint: `${API_BASE}/api/news/audio`,
   });
 
   const editionLabel = editionTime(edition?.generatedAt);

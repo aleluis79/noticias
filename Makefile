@@ -10,7 +10,7 @@ RUN_DIR ?= $(CURDIR)/.run
 PID_FILE ?= $(RUN_DIR)/app.pid
 LOG_FILE ?= $(RUN_DIR)/app.log
 
-.PHONY: help install install-browser dev api web start stop restart status logs test test-api test-web lint build build-api build-web check clean docker-build docker-up docker-down docker-logs
+.PHONY: help install install-browser install-tts dev api web start stop restart status logs test test-api test-web lint build build-api build-web check clean docker-build docker-up docker-down docker-logs
 
 help: ## Muestra esta ayuda
 	@awk 'BEGIN {FS = ":.*## "; printf "\nUso:\n  make <objetivo>\n\nObjetivos:\n"} /^[a-zA-Z_-]+:.*?## / { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -19,6 +19,9 @@ help: ## Muestra esta ayuda
 install: ## Instala las dependencias de la API y del frontend
 	$(DOTNET) restore $(API_PROJECT)
 	cd $(WEB_DIR) && $(PNPM) install
+
+install-tts: ## Descarga Piper y la voz es_AR para el TTS local
+	./tools/install-tts.sh
 
 install-browser: ## Instala Chromium para el fallback de Playwright
 	$(DOTNET) build $(API_PROJECT) --nologo

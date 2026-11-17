@@ -31,8 +31,9 @@ La app no solo agrega titulares: extrae y limpia el cuerpo del artículo origina
 - Extracción por HTML estático con fallback a Chromium headless. La estructura de cada medio puede cambiar y romper su parser; en ese caso la nota se indica como no disponible y se ofrece el original.
 - `GET /api/news` cachea 5 minutos; `GET /api/news/content` acepta solo URLs de las fuentes configuradas (para no ser un proxy abierto) y cachea el cuerpo 30 minutos.
 - Sin cuentas de usuario ni backend de preferencias: tema, tamaño de lectura, velocidad y voz viven en `localStorage`. _(Confirmado en entrevista.)_
-- La nota completa se puede escuchar con la voz del navegador (`speechSynthesis`), con pausa, velocidad y elección de voz en español. El texto no sale del dispositivo: no hay TTS en servidor ni servicio externo.
-- La reproducción se detiene al cerrar la nota o cambiar de medio; no sigue con la pantalla bloqueada. La calidad de la voz depende de las voces instaladas en cada dispositivo.
+- La nota completa se puede escuchar con pausa y velocidad. Chrome, Safari y el resto usan la voz del navegador (`speechSynthesis`), con elección de voz en español; Firefox usa una voz neuronal local generada por la API con Piper (`es_AR-daniela-high`).
+- En Firefox el texto de la nota viaja al servidor del proyecto, donde se sintetiza y se cachea; no se envía a servicios de terceros. En el resto de los navegadores no sale del dispositivo.
+- La reproducción se detiene al cerrar la nota o cambiar de medio; no sigue con la pantalla bloqueada. Si la voz local falla, Firefox vuelve solo a la voz del navegador. La calidad de la voz del navegador depende de las voces instaladas en cada dispositivo.
 - El autor se muestra solo cuando firma una persona; se omite si coincide con el nombre del medio o es una firma genérica.
 - La lectura no reemplaza al medio: siempre se ofrece "Abrir en <medio>", se atribuye medio y autor, y no se reescribe ni se resume con IA. _(Confirmado en entrevista.)_
 - Los filtros combinan medio y texto del título; no hay búsqueda sobre el cuerpo ni historial de lectura.
