@@ -92,6 +92,7 @@ El script descarga Piper y el modelo `es_AR-daniela-high` en `api/.tts/` (ignora
 
 - Endpoint: `GET /api/news/audio?url=...&part=title|attribution|body&index=N`.
 - Caché en disco por nota y segmento; los pedidos concurrentes comparten una sola síntesis.
+- Mientras suena un párrafo, el lector precarga los dos siguientes para que el cambio no tenga espera.
 - Si faltan Piper o el modelo, la API responde 503 y Firefox usa la voz del navegador como antes.
 - Variables: `Tts__Enabled`, `Tts__PiperPath`, `Tts__ModelPath`, `Tts__FfmpegPath`, `Tts__CacheDirectory`, `Tts__MaxConcurrent`.
 - El modelo se entrenó con el dataset [OpenSLR 61](https://www.openslr.org/61/) (Attribution-ShareAlike 4.0) y se distribuye desde [`rhasspy/piper-voices`](https://huggingface.co/rhasspy/piper-voices).

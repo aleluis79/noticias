@@ -52,7 +52,7 @@ describe('useArticlePlayback', () => {
 
     act(() => result.current.play())
 
-    expect(FakeAudio.instances).toHaveLength(1)
+    expect(FakeAudio.instances).toHaveLength(3)
     expect(FakeAudio.instances[0].src).toContain('part=title')
     expect(fake.spoken).toHaveLength(0)
     expect(result.current.status).toBe('playing')

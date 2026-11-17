@@ -28,9 +28,21 @@ export interface ServerArticleAudio {
   stop: () => void
 }
 
+/** How many upcoming segments are generated while the current one plays. */
+const PREFETCH_AHEAD = 2
+
+function releaseAudio(audio: HTMLAudioElement) {
+  audio.onended = null
+  audio.onerror = null
+  audio.pause()
+  audio.removeAttribute('src')
+  audio.load()
+}
+
 /**
- * Plays locally synthesized article segments with an <audio> element. The
- * browser voice remains the fallback when the API is unavailable.
+ * Plays locally synthesized article segments with <audio> elements. The next
+ * segments are fetched while the current one plays, so paragraphs start with
+ * no gap. The browser voice remains the fallback when the API is unavailable.
  */
 export function useServerArticleAudio({
   articleKey,
@@ -47,8 +59,8 @@ export function useServerArticleAudio({
   const [status, setStatus] = useState<SpeechStatus>('idle')
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const prefetchedRef = useRef(new Map<number, HTMLAudioElement>())
   const segmentsRef = useRef<AudioSegment[]>([])
-  const indexRef = useRef(0)
   const generationRef = useRef(0)
   const statusRef = useRef(status)
   const rateRef = useRef(rate)
@@ -63,23 +75,29 @@ export function useServerArticleAudio({
     if (audioRef.current) {
       audioRef.current.playbackRate = rate
     }
+    for (const audio of prefetchedRef.current.values()) {
+      audio.playbackRate = rate
+    }
   }, [rate])
 
   useEffect(() => {
     onErrorRef.current = onError
   }, [onError])
 
-  const disposeAudio = useCallback(() => {
-    const audio = audioRef.current
-    if (!audio) {
-      return
+  const releasePrefetched = useCallback(() => {
+    for (const audio of prefetchedRef.current.values()) {
+      releaseAudio(audio)
     }
-
-    audio.pause()
-    audio.removeAttribute('src')
-    audio.load()
-    audioRef.current = null
+    prefetchedRef.current.clear()
   }, [])
+
+  const disposeAudio = useCallback(() => {
+    if (audioRef.current) {
+      releaseAudio(audioRef.current)
+      audioRef.current = null
+    }
+    releasePrefetched()
+  }, [releasePrefetched])
 
   const fail = (generation: number) => {
     if (generation !== generationRef.current) {
@@ -93,30 +111,82 @@ export function useServerArticleAudio({
     onErrorRef.current()
   }
 
-  const startSegment = (index: number, generation: number) => {
-    if (generation !== generationRef.current) {
-      return
-    }
-
+  const createAudio = (index: number): HTMLAudioElement | null => {
     const segment = segmentsRef.current[index]
     if (!segment || !articleKey || !endpoint) {
-      setStatus('idle')
-      return
+      return null
     }
 
     const audio = new Audio()
     audio.preload = 'auto'
     audio.playbackRate = rateRef.current
     audio.src = audioSegmentUrl(endpoint, articleKey, segment, { title, author })
+    return audio
+  }
+
+  const prefetch = (fromIndex: number) => {
+    const wanted = new Set<number>()
+
+    for (let offset = 1; offset <= PREFETCH_AHEAD; offset += 1) {
+      const index = fromIndex + offset
+      if (index >= segmentsRef.current.length) {
+        break
+      }
+
+      wanted.add(index)
+      if (!prefetchedRef.current.has(index)) {
+        const audio = createAudio(index)
+        if (audio) {
+          audio.load()
+          prefetchedRef.current.set(index, audio)
+        }
+      }
+    }
+
+    for (const [index, audio] of prefetchedRef.current) {
+      if (!wanted.has(index)) {
+        releaseAudio(audio)
+        prefetchedRef.current.delete(index)
+      }
+    }
+  }
+
+  const startSegment = (index: number, generation: number) => {
+    if (generation !== generationRef.current) {
+      return
+    }
+
+    const segment = segmentsRef.current[index]
+    if (!segment) {
+      disposeAudio()
+      setStatus('idle')
+      return
+    }
+
+    let audio = prefetchedRef.current.get(index)
+    if (audio) {
+      prefetchedRef.current.delete(index)
+    } else {
+      audio = createAudio(index) ?? undefined
+    }
+
+    if (!audio) {
+      setStatus('idle')
+      return
+    }
+
     audio.onended = () => {
       if (generation !== generationRef.current) {
         return
       }
 
+      releaseAudio(audio as HTMLAudioElement)
+      audioRef.current = null
+
       if (index + 1 < segmentsRef.current.length) {
-        indexRef.current = index + 1
         startSegment(index + 1, generation)
       } else {
+        disposeAudio()
         setStatus('idle')
       }
     }
@@ -125,6 +195,7 @@ export function useServerArticleAudio({
     audioRef.current = audio
     setStatus('playing')
     void audio.play().catch(() => fail(generation))
+    prefetch(index)
   }
 
   const play = () => {
@@ -142,7 +213,7 @@ export function useServerArticleAudio({
     generationRef.current += 1
     const generation = generationRef.current
     segmentsRef.current = buildAudioSegments(paragraphCount)
-    indexRef.current = 0
+    disposeAudio()
     startSegment(0, generation)
   }
 

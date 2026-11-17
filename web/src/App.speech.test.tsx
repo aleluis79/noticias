@@ -187,7 +187,7 @@ describe('App speech integration', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Escuchar' }))
 
-    expect(FakeAudio.instances).toHaveLength(1)
+    expect(FakeAudio.instances).toHaveLength(3)
     expect(FakeAudio.instances[0].src).toContain('/api/news/audio')
     expect(FakeAudio.instances[0].src).toContain('part=title')
     expect(speech?.fake.spoken).toHaveLength(0)
