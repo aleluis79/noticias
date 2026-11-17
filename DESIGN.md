@@ -127,7 +127,7 @@ components:
 
 El sistema se comporta como la primera plana de una edición impresa sobre papel cálido: una cabecera con filete rojo, un cuerpo de historias ordenado por importancia y tipografía con serif para todo lo que se lee. No hay marco de aplicación, barra lateral ni widgets. La página entera es la edición del día.
 
-La diferencia con un diario es que la edición es **comparada**. La portada abre con una matriz de historias por medio —las historias en filas, los doce medios en columnas, un punto por cada medio que cubre la historia— y las notas que trae un solo medio caen a una banda de breves. La pluralidad deja de ser una afirmación del texto y se vuelve geometría: quién cubre qué se lee antes de leer nada.
+La diferencia con un diario es que la edición es **comparada**. La portada abre con una matriz de historias por medio —las historias en filas, los trece medios en columnas, un punto por cada medio que cubre la historia— y las notas que trae un solo medio caen a una banda de breves. La pluralidad deja de ser una afirmación del texto y se vuelve geometría: quién cubre qué se lee antes de leer nada.
 
 El tono es sereno y autoritativo, con densidad media. El rojo de imprenta aparece en dosis pequeñas y en tres trabajos concretos: filete de cabecera, etiquetas de cobertura y foco. La lectura manda sobre la interfaz: al abrir una historia, el panel de lectura ocupa el ancho completo, limita la medida a 68ch y el serif sube de tamaño con el control de lectura. El sistema evita explícitamente el look de feed de red social: nada de scroll infinito, métricas de engagement, avatares ni botones de reacción.
 
@@ -193,7 +193,7 @@ Un contenedor único de `min(100%, 1120px)` centrado, con 1.25rem de gutter late
 
 - **Cabecera:** título a la izquierda y metadatos a la derecha (fecha completa y "Actualizado HH:MM hs"), subtítulo debajo, acciones alineadas a la izquierda y filete de cierre. Un filete rojo de 3px la corona, inset 1.25rem respecto del contenedor.
 - **Filtros:** grilla de dos columnas `minmax(0, 1.5fr) minmax(0, 1fr)` (búsqueda por título y medio), con una fila inferior de ancho completo para el contador y "Limpiar filtros".
-- **Matriz:** `grid-template-columns: minmax(0, 1fr) minmax(0, 24rem)`. La columna derecha reparte los 12 medios en partes iguales con separación de 0.2rem, para que leyenda y puntos compartan la misma geometría. Las etiquetas de medio se rotan en vertical y crecen hacia arriba desde la fila.
+- **Matriz:** `grid-template-columns: minmax(0, 1fr) minmax(0, 24rem)`. La columna derecha reparte los 13 medios en partes iguales con separación de 0.2rem, para que leyenda y puntos compartan la misma geometría. Las etiquetas de medio se rotan en vertical y crecen hacia arriba desde la fila.
 - **Breves:** tres columnas con 2.2rem de separación, intercaladas por medio para que un solo diario no ocupe la banda.
 - **Resto de la edición:** lista de filas a ancho completo, paginada de a 18.
 - **Panel de lectura:** ocupa el ancho completo del contenedor, arriba de la matriz, con `68ch` de medida centrada para cuerpo, autor y controles.

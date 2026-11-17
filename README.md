@@ -4,7 +4,7 @@ Agregador de noticias que reúne los principales titulares de los diarios argent
 
 ## Características
 
-- Titulares de 12 medios argentinos en una única respuesta (hasta 20 por medio).
+- Titulares de 13 medios argentinos en una única respuesta (hasta 20 por medio).
 - Extracción mediante HTML estático y fallback a un navegador Chromium headless para los sitios que renderizan con JavaScript.
 - Caché en memoria de 5 minutos para los titulares y de 30 minutos para el cuerpo de cada nota.
 - Lectura completa de la nota dentro de la propia interfaz, extrayendo y limpiando los párrafos del artículo original.
@@ -223,6 +223,7 @@ chips del panel de lectura.
 | --- | --- |
 | Clarín | https://www.clarin.com |
 | La Nación | https://www.lanacion.com.ar |
+| Infobae | https://www.infobae.com |
 | Página/12 | https://www.pagina12.com.ar |
 | TN | https://tn.com.ar |
 | Ámbito Financiero | https://www.ambito.com |

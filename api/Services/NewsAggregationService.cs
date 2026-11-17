@@ -29,6 +29,7 @@ namespace NewsAggregator.Services
         {
             new("https://www.clarin.com", () => new ClarínParser()),
             new("https://www.lanacion.com.ar", () => new LaNacionParser()),
+            new("https://www.infobae.com", () => new InfobaeParser()),
             new("https://www.pagina12.com.ar", () => new Pagina12Parser()),
             new("https://tn.com.ar", () => new TNParser()),
             new("https://www.ambito.com", () => new AmbitoFinancieroParser()),

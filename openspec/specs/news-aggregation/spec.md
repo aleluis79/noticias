@@ -1,7 +1,7 @@
 # news-aggregation Specification
 
 ## Purpose
-This capability provides a unified, normalized, and centralized view of news content retrieved from a predefined list of Argentine media outlets (Clarín, La Nación, Página/12, TN, Ámbito Financiero, El Cronista, Perfil, C5N, La Voz del Interior, El Día, 0221 y Seúl).
+This capability provides a unified, normalized, and centralized view of news content retrieved from a predefined list of Argentine media outlets (Clarín, La Nación, Infobae, Página/12, TN, Ámbito Financiero, El Cronista, Perfil, C5N, La Voz del Interior, El Día, 0221 y Seúl).
 
 ## Requirements
 

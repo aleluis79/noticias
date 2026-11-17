@@ -8,7 +8,7 @@ using Xunit;
 
 public class NewsAggregationServiceTests
 {
-    private const int Sources = 12;
+    private const int Sources = 13;
     private const int ArticlesPerSource = 2;
 
     private readonly Mock<IPlaywright> _mockPlaywright = new();

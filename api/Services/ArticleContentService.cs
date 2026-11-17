@@ -33,7 +33,7 @@ namespace NewsAggregator.Services
             ".article-body", ".article__body", ".article-body-content",
             ".article-content", ".article__content", ".article-text",
             ".articletext", ".articleBody", ".nota-cuerpo", ".nota__cuerpo",
-            ".nota-body", ".body-nota", ".cuerpo-nota", ".story-body",
+            ".nota-body", ".body-nota", ".body-article", ".cuerpo-nota", ".story-body",
             ".story-body__inner", ".entry-content", ".post-content", ".post-body",
             ".content-body", ".richtext", ".cuerpo__nota", ".cuerpo",
             ".elementor-widget-theme-post-content",
