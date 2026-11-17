@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import './App.css';
 
 // Shapes returned by GET /api/stories (api/Models/NewsStory.cs)
@@ -51,7 +51,7 @@ const THEME_STORAGE_KEY = 'noticias-theme';
 const NOTE_SIZE_STORAGE_KEY = 'noticias-reading-size';
 const NOTE_SCALES = [1, 1.15, 1.3, 1.45] as const;
 
-const MATRIX_ROWS = 6;
+const COMPARE_PAGE = 12;
 const BREVES = 6;
 const PAGE_SIZE = 18;
 
@@ -136,6 +136,11 @@ function editionTime(raw?: string) {
  * Singletons arrive grouped by outlet because the API fetches source by
  * source. Round-robin keeps one outlet from filling the whole breves band.
  */
+/** Outlets covering a story, in API order, one entry each. */
+function outletsOf(story: Story): string[] {
+  return Array.from(new Set(story.sources.map((source) => source.sourceName)));
+}
+
 function interleaveBySource(stories: Story[]): Story[] {
   const buckets = new Map<string, Story[]>();
   for (const story of stories) {
@@ -211,6 +216,7 @@ function App() {
   const [sourceFilter, setSourceFilter] = useState('all');
   const [titleFilter, setTitleFilter] = useState('');
   const [visibleExtra, setVisibleExtra] = useState(PAGE_SIZE);
+  const [visibleCompare, setVisibleCompare] = useState(COMPARE_PAGE);
 
   const [themePreference, setThemePreference] =
     useState<ThemePreference>(initialThemePreference);
@@ -221,6 +227,8 @@ function App() {
   const mounted = useRef(true);
   const readerRef = useRef<HTMLElement | null>(null);
   const openerRef = useRef<HTMLButtonElement | null>(null);
+  const openScrollRef = useRef(0);
+  const pendingScrollRef = useRef<number | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -326,29 +334,13 @@ function App() {
     return () => window.removeEventListener('storage', handleStorage);
   }, []);
 
-  useEffect(() => {
-    if (!openStoryId) {
-      return;
-    }
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') {
-        return;
-      }
-
-      setOpenStoryId(null);
-      setOpenSourceUrl(null);
-      openerRef.current?.focus({ preventScroll: true });
-    };
-
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
-  }, [openStoryId]);
-
   const loadEdition = async (refresh: boolean) => {
     if (refresh) {
       setRefreshing(true);
       setRefreshError(null);
+    } else {
+      setLoading(true);
+      setError(null);
     }
 
     try {
@@ -369,12 +361,22 @@ function App() {
       if (!mounted.current) {
         return;
       }
-      setRefreshError(
-        'No pudimos actualizar la edición. Seguimos mostrando la que ya teníamos.',
-      );
+      if (refresh) {
+        setRefreshError(
+          'No pudimos actualizar la edición. Seguimos mostrando la que ya teníamos.',
+        );
+      } else {
+        setError(
+          'No pudimos conectarnos con el servicio de noticias. Probá de nuevo en unos minutos.',
+        );
+      }
     } finally {
-      if (mounted.current && refresh) {
-        setRefreshing(false);
+      if (mounted.current) {
+        if (refresh) {
+          setRefreshing(false);
+        } else {
+          setLoading(false);
+        }
       }
     }
   };
@@ -448,14 +450,12 @@ function App() {
     filteredStories.filter((story) => story.sourceCount === 1),
   );
 
-  const matrixStories = clustered.slice(0, MATRIX_ROWS);
+  const matrixStories = clustered.slice(0, visibleCompare);
   const breves = singleSource.slice(0, BREVES);
-  const extraStories = [
-    ...clustered.slice(MATRIX_ROWS),
-    ...singleSource.slice(BREVES),
-  ].slice(0, visibleExtra);
+  const extraStories = singleSource.slice(BREVES).slice(0, visibleExtra);
 
-  const hasMore = clustered.length - MATRIX_ROWS + singleSource.length - BREVES > visibleExtra;
+  const hasMoreCompare = clustered.length > matrixStories.length;
+  const hasMore = singleSource.length - BREVES > visibleExtra;
   const hasFilters = sourceFilter !== 'all' || titleFilter.trim() !== '';
   const filteredArticleCount = filteredStories.reduce(
     (total, story) => total + story.articleCount,
@@ -470,6 +470,7 @@ function App() {
 
   const openStory = (story: Story, opener: HTMLButtonElement) => {
     openerRef.current = opener;
+    openScrollRef.current = window.scrollY;
     const first = story.sources[0];
     setOpenStoryId(story.id);
     setOpenSourceUrl(first.originalUrl);
@@ -481,10 +482,46 @@ function App() {
   };
 
   const closeStory = () => {
+    pendingScrollRef.current = openScrollRef.current;
     setOpenStoryId(null);
     setOpenSourceUrl(null);
-    openerRef.current?.focus({ preventScroll: true });
   };
+
+  // The reader is removed before the browser can clamp the restored offset,
+  // so the scroll and the focus land after the DOM update, not before it.
+  useLayoutEffect(() => {
+    if (openStoryId !== null || pendingScrollRef.current === null) {
+      return;
+    }
+
+    window.scrollTo({ top: pendingScrollRef.current });
+    pendingScrollRef.current = null;
+    openerRef.current?.focus({ preventScroll: true });
+  }, [openStoryId]);
+
+  useEffect(() => {
+    if (!openStoryId) {
+      return;
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest('input, select, textarea, [contenteditable="true"]')
+      ) {
+        return;
+      }
+
+      closeStory();
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  });
 
   const selectSource = (url: string) => {
     setOpenSourceUrl(url);
@@ -498,6 +535,26 @@ function App() {
     openStoryData?.sources.find((source) => source.originalUrl === openSourceUrl) ??
     openStoryData?.sources[0] ??
     null;
+  const openOutlets: [string, StorySource[]][] = [];
+  if (openStoryData) {
+    const byOutlet = new Map<string, StorySource[]>();
+    for (const source of openStoryData.sources) {
+      const versions = byOutlet.get(source.sourceName);
+      if (versions) {
+        versions.push(source);
+      } else {
+        byOutlet.set(source.sourceName, [source]);
+      }
+    }
+    openOutlets.push(...byOutlet.entries());
+  }
+
+  const openSourceVersions = openStoryData && openSource
+    ? openStoryData.sources.filter(
+        (source) => source.sourceName === openSource.sourceName,
+      )
+    : [];
+
   const openContent = openSource ? contents[openSource.originalUrl] : undefined;
   const openAuthor =
     openContent?.status === 'ready'
@@ -596,10 +653,7 @@ function App() {
             <button
               type="button"
               className="refresh-button state__button"
-              onClick={() => {
-                setLoading(true);
-                void loadEdition(false);
-              }}
+              onClick={() => void loadEdition(false)}
             >
               Reintentar
             </button>
@@ -644,20 +698,41 @@ function App() {
                     role="group"
                     aria-label="Elegir el medio para leer esta historia"
                   >
-                    {openStoryData.sources.map((source) => (
+                    {openOutlets.map(([outlet, versions]) => (
                       <button
-                        key={source.originalUrl}
+                        key={outlet}
                         type="button"
                         className="chip chip--action"
                         aria-pressed={
-                          source.originalUrl === openSource.originalUrl
+                          openSource.sourceName === outlet
                         }
-                        onClick={() => selectSource(source.originalUrl)}
+                        onClick={() => selectSource(versions[0].originalUrl)}
                       >
-                        {source.sourceName}
+                        {outlet}
                       </button>
                     ))}
                   </div>
+                )}
+
+                {openSourceVersions.length > 1 && (
+                  <p className="reader__versions">
+                    <span>Otras notas de {openSource.sourceName}:</span>
+                    {openSourceVersions
+                      .filter(
+                        (version) =>
+                          version.originalUrl !== openSource.originalUrl,
+                      )
+                      .map((version) => (
+                        <button
+                          key={version.originalUrl}
+                          type="button"
+                          className="reader__version"
+                          onClick={() => selectSource(version.originalUrl)}
+                        >
+                          {version.title}
+                        </button>
+                      ))}
+                  </p>
                 )}
 
                 <h2 id="reader-title" className="reader__title">
@@ -880,7 +955,14 @@ function App() {
                                 </button>
                               </h3>
                               <p className="matrix__coverage">
-                                {story.sourceCount} medios cubren esta historia
+                                <span className="matrix__attribution">
+                                  Según {story.sourceName}
+                                </span>
+                                <span aria-hidden="true"> · </span>
+                                {story.sourceCount} medios
+                                <span className="visually-hidden">
+                                  : {outletsOf(story).join(', ')}
+                                </span>
                               </p>
                             </div>
                             <div className="matrix__dots">
@@ -919,6 +1001,20 @@ function App() {
                           </li>
                         ))}
                       </ol>
+
+                      {hasMoreCompare && (
+                        <button
+                          type="button"
+                          className="more__button"
+                          onClick={() =>
+                            setVisibleCompare(
+                              (current) => current + COMPARE_PAGE,
+                            )
+                          }
+                        >
+                          Ver más historias comparadas
+                        </button>
+                      )}
                     </section>
                   )}
 
