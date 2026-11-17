@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using Moq;
 using NewsAggregator.Models;
 using NewsAggregator.Services;
+using NewsAggregator.Services.Archive;
 using NewsAggregator.Services.Grouping;
 using NewsAggregator.Services.Tts;
 using Xunit;
@@ -44,7 +46,9 @@ public class NewsControllerAudioTests
             Mock.Of<INewsAggregationService>(),
             content.Object,
             Mock.Of<IStoryGroupingService>(),
-            tts.Object)
+            tts.Object,
+            Mock.Of<IEditionHistoryService>(),
+            new EditionClock(TimeProvider.System, Options.Create(new ArchiveOptions())))
         {
             ControllerContext = new ControllerContext
             {

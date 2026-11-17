@@ -15,7 +15,10 @@ namespace NewsAggregator.Services.Parsers
     /// </summary>
     public abstract class HomePageParser : IParser
     {
-        private const int DefaultMaxArticles = 20;
+        private const int DefaultMaxArticles = 30;
+
+        /// <summary>Maximum number of headlines taken from each section page.</summary>
+        public const int SectionMaxArticles = 12;
 
         private static readonly Regex WhitespaceRegex = new(@"\s+", RegexOptions.Compiled);
         private static readonly Regex NonAlphanumericRegex = new(@"[^\p{L}\p{N}]+", RegexOptions.Compiled);
@@ -54,19 +57,31 @@ namespace NewsAggregator.Services.Parsers
 
         public abstract string BaseUrl { get; }
 
-        /// <summary>Maximum number of headlines returned per source.</summary>
+        /// <summary>Maximum number of headlines returned from a single page.</summary>
         protected virtual int MaxArticles => DefaultMaxArticles;
+
+        /// <summary>
+        /// Section pages that complement the outlet's home page. Paths are
+        /// resolved against <see cref="BaseUrl"/>.
+        /// </summary>
+        protected virtual string[] SectionPaths => Array.Empty<string>();
+
+        public IReadOnlyList<string> SectionUrls =>
+            SectionPaths
+                .Select(path => new Uri(new Uri(BaseUrl), path).ToString())
+                .ToArray();
 
         /// <summary>Extra path fragments that do not point to a news article on this site.</summary>
         protected virtual string[] AdditionalIgnoredPathTerms => Array.Empty<string>();
 
-        public IReadOnlyList<NewsArticle> Parse(string rawHtml)
+        public IReadOnlyList<NewsArticle> Parse(string rawHtml, int? maxArticles = null)
         {
             if (string.IsNullOrWhiteSpace(rawHtml))
             {
                 return Array.Empty<NewsArticle>();
             }
 
+            var limit = maxArticles ?? MaxArticles;
             var document = new HtmlParser().ParseDocument(rawHtml);
             var candidates = new List<RawCandidate>();
 
@@ -74,12 +89,12 @@ namespace NewsAggregator.Services.Parsers
             CollectHeadings(document, candidates);
             CollectArticleCards(document, candidates);
 
-            if (candidates.Count < MaxArticles)
+            if (candidates.Count < limit)
             {
                 CollectArticleAnchors(document, candidates);
             }
 
-            return Materialize(candidates);
+            return Materialize(candidates, limit);
         }
 
         /// <summary>
@@ -288,7 +303,7 @@ namespace NewsAggregator.Services.Parsers
                 : null;
         }
 
-        private IReadOnlyList<NewsArticle> Materialize(List<RawCandidate> candidates)
+        private IReadOnlyList<NewsArticle> Materialize(List<RawCandidate> candidates, int maxArticles)
         {
             var articles = new List<NewsArticle>();
             var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -334,7 +349,7 @@ namespace NewsAggregator.Services.Parsers
                     PublishedDate = candidate.Published
                 });
 
-                if (articles.Count >= MaxArticles)
+                if (articles.Count >= maxArticles)
                 {
                     break;
                 }
@@ -649,7 +664,7 @@ namespace NewsAggregator.Services.Parsers
             return cleaned.Length == 0 ? null : cleaned;
         }
 
-        private static string NormalizeKey(string value) =>
+        internal static string NormalizeKey(string value) =>
             NonAlphanumericRegex.Replace(value.ToLowerInvariant(), string.Empty);
     }
 }

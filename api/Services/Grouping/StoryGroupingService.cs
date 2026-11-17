@@ -24,8 +24,11 @@ namespace NewsAggregator.Services.Grouping
         /// </summary>
         public const double SameStoryThreshold = 0.50;
 
-        /// <summary>Twelve is the number of configured outlets.</summary>
-        public const int MaxArticlesPerStory = 12;
+        /// <summary>
+        /// Two versions per outlet (home + section) for the 13 configured
+        /// sources, so a section article never pushes a real coverage out.
+        /// </summary>
+        public const int MaxArticlesPerStory = 26;
 
         private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
 

@@ -24,7 +24,7 @@ ARG TTS_VOICE_URL=https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /opt/piper /opt/piper/voices /var/cache/noticias-tts \
+    && mkdir -p /opt/piper /opt/piper/voices /var/cache/noticias-tts /var/lib/noticias-archive \
     && curl -fsSL "https://github.com/rhasspy/piper/releases/download/${PIPER_VERSION}/piper_linux_x86_64.tar.gz" \
         | tar -xz -C /opt \
     && curl -fsSL -o "/opt/piper/voices/${TTS_VOICE}.onnx" "${TTS_VOICE_URL}" \
@@ -38,7 +38,8 @@ ENV ASPNETCORE_URLS=http://+:8080 \
     Tts__PiperPath=/opt/piper/piper \
     Tts__ModelPath=/opt/piper/voices/es_AR-daniela-high.onnx \
     Tts__FfmpegPath=/usr/bin/ffmpeg \
-    Tts__CacheDirectory=/var/cache/noticias-tts
+    Tts__CacheDirectory=/var/cache/noticias-tts \
+    Archive__Directory=/var/lib/noticias-archive
 
 COPY --from=build /app/publish ./
 

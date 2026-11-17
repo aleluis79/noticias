@@ -4,7 +4,8 @@ Agregador de noticias que reúne los principales titulares de los diarios argent
 
 ## Características
 
-- Titulares de 13 medios argentinos en una única respuesta (hasta 20 por medio).
+- Titulares de 13 medios argentinos en una única respuesta (hasta 50 por medio, sumando portada y secciones).
+- Historial local de las últimas 3 ediciones (hoy, ayer y anteayer), con consulta por fecha y una sección propia en la portada.
 - Extracción mediante HTML estático y fallback a un navegador Chromium headless para los sitios que renderizan con JavaScript.
 - Caché en memoria de 5 minutos para los titulares y de 30 minutos para el cuerpo de cada nota.
 - Lectura completa de la nota dentro de la propia interfaz, extrayendo y limpiando los párrafos del artículo original.
@@ -101,7 +102,7 @@ En Docker, Piper, `ffmpeg` y el modelo ya vienen en la imagen de la API, y la ca
 
 ## Docker
 
-La aplicación también puede ejecutarse con Docker Compose. La imagen de la API incluye Chromium y sus dependencias, así que el fallback de Playwright funciona sin instalar nada en el host.
+La aplicación también puede ejecutarse con Docker Compose. La imagen de la API incluye Chromium y sus dependencias, así que el fallback de Playwright funciona sin instalar nada en el host. El historial de ediciones queda en el volumen `noticias-archive` para sobrevivir a los reinicios.
 
 ```bash
 docker compose up --build -d
@@ -174,6 +175,7 @@ Después entrá a `http://localhost:5173` en tu navegador. Tené en cuenta que `
 | `GET` | `/api/news/audio?url={url}&part=title\|attribution\|body&index={n}` | Devuelve el audio local de un segmento de la nota (Firefox). Requiere `make install-tts`. |
 | `GET` | `/api/stories` | Agrupa los titulares en historias y devuelve la cobertura por medio. Es lo que consume la portada. |
 | `GET` | `/api/stories?refresh=true` | Igual que el anterior, salteando la caché. |
+| `GET` | `/api/stories?date=YYYY-MM-DD` | Devuelve una edición guardada de un día anterior (hoy + 2 días). No vuelve a descargar los medios. |
 
 Ejemplo:
 
@@ -243,6 +245,23 @@ La portada muestra las historias con más de un medio en una matriz, y las notas
 de una sola voz en la banda de breves. El lector elige qué medio leer con los
 chips del panel de lectura.
 
+### Historial de ediciones
+
+La API guarda una edición por día en `api/.archive/` (o en el volumen de Docker)
+y conserva **hoy + los 2 días anteriores**. Cada respuesta de `/api/stories`
+incluye `date` y `previousDays` con los días disponibles. La portada muestra una
+sección “Días anteriores” y pide una edición solo cuando el lector elige ese día.
+
+- `GET /api/stories?date=2026-11-16` devuelve la edición guardada.
+- Un día sin archivo responde 404; una fecha inválida, futura o fuera de la
+  ventana responde 400.
+- El historial empieza a guardarse desde el despliegue. Si la app no corrió un
+  día, ese día no aparece: no se rellena retroactivamente.
+- Solo se guardan los metadatos de los artículos (título, resumen, URL, medio y
+  fecha de publicación cuando existe), no los cuerpos de las notas.
+- La fecha de edición se calcula en `America/Argentina/Buenos_Aires`; la caché de
+  5 minutos no reutiliza una edición del día anterior después de medianoche.
+
 ## Fuentes soportadas
 
 | Medio | Sitio |
@@ -299,11 +318,14 @@ los tests. Corré un snapshot por día durante unos días antes de tocarlo.
    {
        public override string SourceName => "Mi Diario";
        public override string BaseUrl => "https://www.midiario.com";
+
+       // Opcional: páginas de sección que complementan la portada.
+       protected override string[] SectionPaths => new[] { "/politica", "/economia" };
    }
    ```
 
 2. Registrarlo en el arreglo `Sources` de `api/Services/NewsAggregationService.cs`.
-3. Si el sitio tiene secciones que no son notas (por ejemplo, `/podcasts/`), sobrescribir `AdditionalIgnoredPathTerms` o `MaxArticles` según haga falta.
+3. Si el sitio tiene secciones que no son notas (por ejemplo, `/podcasts/`), sobrescribir `AdditionalIgnoredPathTerms` o `MaxArticles` según haga falta. Las rutas de `SectionPaths` se resuelven contra `BaseUrl` y aportan hasta 12 notas cada una.
 
 El endpoint de contenido valida automáticamente que la URL pertenezca a alguna de las fuentes registradas, así que una fuente nueva también queda habilitada para la lectura completa.
 

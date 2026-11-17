@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
 using NewsAggregator.Models;
+using NewsAggregator.Services.Archive;
 using NewsAggregator.Services.Parsers;
 
 namespace NewsAggregator.Services
@@ -17,8 +18,11 @@ namespace NewsAggregator.Services
         private static readonly TimeSpan NavigationTimeout = TimeSpan.FromSeconds(15);
         private static readonly TimeSpan NetworkIdleTimeout = TimeSpan.FromSeconds(4);
 
-        private const int MaxParallelFetches = 4;
+        private const int MaxParallelFetches = 8;
         private const int MinArticlesBeforeBrowserFallback = 2;
+
+        /// <summary>Hard cap for one outlet after merging its home and sections.</summary>
+        public const int MaxArticlesPerSource = 50;
 
         private static readonly Regex ParagraphTagRegex =
             new(@"<p[\s>]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -97,11 +101,16 @@ namespace NewsAggregator.Services
             return renderedHtml ?? html;
         }
 
-        private sealed record CacheEntry(DateTime ExpiresAt, IReadOnlyList<NewsArticle> Articles);
+        private sealed record CacheEntry(
+            DateTime ExpiresAt,
+            DateOnly EditionDate,
+            IReadOnlyList<NewsArticle> Articles);
 
         private readonly IPlaywright _playwright;
         private readonly HttpClient _httpClient;
         private readonly ILogger<NewsAggregationService> _logger;
+        private readonly IDailyEditionStore _archive;
+        private readonly EditionClock _clock;
 
         private readonly SemaphoreSlim _fetchGate = new(MaxParallelFetches, MaxParallelFetches);
         private readonly SemaphoreSlim _refreshGate = new(1, 1);
@@ -109,6 +118,7 @@ namespace NewsAggregator.Services
 
         private CacheEntry? _cache;
         private IReadOnlyList<NewsArticle>? _lastSnapshot;
+        private DateOnly? _lastSnapshotDate;
 
         private IBrowser? _browser;
         private IBrowserContext? _browserContext;
@@ -117,16 +127,21 @@ namespace NewsAggregator.Services
         public NewsAggregationService(
             IPlaywright playwright,
             HttpClient httpClient,
-            ILogger<NewsAggregationService> logger)
+            ILogger<NewsAggregationService> logger,
+            IDailyEditionStore archive,
+            EditionClock clock)
         {
             _playwright = playwright;
             _httpClient = httpClient;
             _logger = logger;
+            _archive = archive;
+            _clock = clock;
         }
 
         public async Task<IEnumerable<NewsArticle>> GetNewsAsync(bool forceRefresh = false)
         {
-            if (!forceRefresh && GetCached() is { } cached)
+            var today = _clock.Today;
+            if (!forceRefresh && GetCached(today) is { } cached)
             {
                 return cached;
             }
@@ -134,7 +149,8 @@ namespace NewsAggregator.Services
             await _refreshGate.WaitAsync().ConfigureAwait(false);
             try
             {
-                if (!forceRefresh && GetCached() is { } cachedAfterLock)
+                today = _clock.Today;
+                if (!forceRefresh && GetCached(today) is { } cachedAfterLock)
                 {
                     return cachedAfterLock;
                 }
@@ -146,13 +162,21 @@ namespace NewsAggregator.Services
 
                 if (articles.Count == 0)
                 {
-                    // Every source failed: keep serving the previous snapshot if we have one.
+                    // Every source failed: only reuse a snapshot from the same
+                    // edition date, never yesterday's news labelled as today's.
                     _logger.LogWarning("No articles could be retrieved from any source in {Elapsed} ms", stopwatch.ElapsedMilliseconds);
-                    return _lastSnapshot ?? articles;
+                    return _lastSnapshot is not null && _lastSnapshotDate == today
+                        ? _lastSnapshot
+                        : articles;
                 }
 
                 _lastSnapshot = articles;
-                Volatile.Write(ref _cache, new CacheEntry(DateTime.UtcNow.Add(CacheDuration), articles));
+                _lastSnapshotDate = today;
+                await SaveEditionAsync(today, articles).ConfigureAwait(false);
+                Volatile.Write(ref _cache, new CacheEntry(
+                    DateTime.UtcNow.Add(CacheDuration),
+                    today,
+                    articles));
 
                 _logger.LogInformation(
                     "Aggregated {Count} articles from {Sources} sources in {Elapsed} ms",
@@ -166,10 +190,28 @@ namespace NewsAggregator.Services
             }
         }
 
-        private IReadOnlyList<NewsArticle>? GetCached()
+        private async Task SaveEditionAsync(DateOnly date, IReadOnlyList<NewsArticle> articles)
+        {
+            try
+            {
+                await _archive.SaveAsync(date, articles, _clock.UtcNow.UtcDateTime)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // The archive is best-effort: a disk problem must not break the edition.
+                _logger.LogWarning(ex, "Could not store the edition for {Date}", date);
+            }
+        }
+
+        private IReadOnlyList<NewsArticle>? GetCached(DateOnly today)
         {
             var entry = Volatile.Read(ref _cache);
-            return entry is not null && entry.ExpiresAt > DateTime.UtcNow ? entry.Articles : null;
+            return entry is not null &&
+                   entry.EditionDate == today &&
+                   entry.ExpiresAt > DateTime.UtcNow
+                ? entry.Articles
+                : null;
         }
 
         private async Task<IReadOnlyList<NewsArticle>> FetchSourceAsync(Source source)
@@ -177,12 +219,43 @@ namespace NewsAggregator.Services
             var parser = source.ParserFactory();
             var stopwatch = Stopwatch.StartNew();
 
+            try
+            {
+                var homeArticles = await FetchHomePageAsync(parser, source.Url).ConfigureAwait(false);
+
+                var sectionUrls = parser.SectionUrls;
+                var sectionArticles = await Task.WhenAll(
+                    sectionUrls.Select(url => FetchSectionAsync(parser, url)))
+                    .ConfigureAwait(false);
+
+                var articles = MergeSourceArticles(homeArticles, sectionArticles);
+
+                _logger.LogInformation(
+                    "{Source}: {Count} articles in {Elapsed} ms ({Home} from home, {Sections} from {SectionCount} sections)",
+                    parser.SourceName,
+                    articles.Count,
+                    stopwatch.ElapsedMilliseconds,
+                    homeArticles.Count,
+                    articles.Count - homeArticles.Count,
+                    sectionUrls.Count);
+
+                return articles;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not fetch news from {Source}", parser.SourceName);
+                return Array.Empty<NewsArticle>();
+            }
+        }
+
+        private async Task<IReadOnlyList<NewsArticle>> FetchHomePageAsync(IParser parser, string url)
+        {
             await _fetchGate.WaitAsync().ConfigureAwait(false);
             try
             {
                 IReadOnlyList<NewsArticle> articles = Array.Empty<NewsArticle>();
 
-                var html = await FetchHtmlAsync(source.Url).ConfigureAwait(false);
+                var html = await FetchHtmlAsync(url).ConfigureAwait(false);
                 if (html is not null)
                 {
                     articles = SafeParse(parser, html);
@@ -192,7 +265,7 @@ namespace NewsAggregator.Services
                 // browser when the static HTML did not give us enough headlines.
                 if (articles.Count < MinArticlesBeforeBrowserFallback)
                 {
-                    var renderedHtml = await FetchWithBrowserAsync(source.Url).ConfigureAwait(false);
+                    var renderedHtml = await FetchWithBrowserAsync(url).ConfigureAwait(false);
                     if (renderedHtml is not null)
                     {
                         var renderedArticles = SafeParse(parser, renderedHtml);
@@ -203,21 +276,100 @@ namespace NewsAggregator.Services
                     }
                 }
 
-                _logger.LogInformation(
-                    "{Source}: {Count} articles in {Elapsed} ms",
-                    parser.SourceName, articles.Count, stopwatch.ElapsedMilliseconds);
+                return articles;
+            }
+            finally
+            {
+                _fetchGate.Release();
+            }
+        }
+
+        /// <summary>
+        /// Fetches one section page. A missing section is not fatal: the home page
+        /// and the other sections of the same outlet are still returned.
+        /// </summary>
+        private async Task<IReadOnlyList<NewsArticle>> FetchSectionAsync(IParser parser, string url)
+        {
+            await _fetchGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var html = await FetchHtmlAsync(url).ConfigureAwait(false);
+                if (html is null)
+                {
+                    _logger.LogWarning("{Source}: section {Url} could not be fetched", parser.SourceName, url);
+                    return Array.Empty<NewsArticle>();
+                }
+
+                var articles = SafeParse(parser, html, HomePageParser.SectionMaxArticles);
+                _logger.LogDebug(
+                    "{Source}: {Count} articles from section {Url}",
+                    parser.SourceName,
+                    articles.Count,
+                    url);
 
                 return articles;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Could not fetch news from {Source}", parser.SourceName);
+                _logger.LogWarning(ex, "{Source}: section {Url} failed", parser.SourceName, url);
                 return Array.Empty<NewsArticle>();
             }
             finally
             {
                 _fetchGate.Release();
             }
+        }
+
+        /// <summary>
+        /// Merges the outlet's pages keeping home page priority. Repeats are
+        /// detected by canonical URL (query string, fragment and trailing slash
+        /// ignored) or normalized title.
+        /// </summary>
+        internal static IReadOnlyList<NewsArticle> MergeSourceArticles(
+            IReadOnlyList<NewsArticle> homeArticles,
+            IReadOnlyList<IReadOnlyList<NewsArticle>> sectionArticles)
+        {
+            var merged = new List<NewsArticle>(MaxArticlesPerSource);
+            var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var seenTitles = new HashSet<string>(StringComparer.Ordinal);
+
+            void AddRange(IEnumerable<NewsArticle> articles)
+            {
+                foreach (var article in articles)
+                {
+                    if (merged.Count >= MaxArticlesPerSource)
+                    {
+                        return;
+                    }
+
+                    var urlKey = CanonicalUrlKey(article.OriginalUrl);
+                    if (!seenUrls.Add(urlKey) ||
+                        !seenTitles.Add(HomePageParser.NormalizeKey(article.Title)))
+                    {
+                        continue;
+                    }
+
+                    merged.Add(article);
+                }
+            }
+
+            AddRange(homeArticles);
+            foreach (var articles in sectionArticles)
+            {
+                AddRange(articles);
+            }
+
+            return merged;
+        }
+
+        private static string CanonicalUrlKey(string url)
+        {
+            if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            {
+                return uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
+            }
+
+            return url.TrimEnd('/');
         }
 
         private async Task<string?> FetchHtmlAsync(string url)
@@ -331,11 +483,11 @@ namespace NewsAggregator.Services
             }
         }
 
-        private IReadOnlyList<NewsArticle> SafeParse(IParser parser, string html)
+        private IReadOnlyList<NewsArticle> SafeParse(IParser parser, string html, int? maxArticles = null)
         {
             try
             {
-                return parser.Parse(html);
+                return parser.Parse(html, maxArticles);
             }
             catch (Exception ex)
             {

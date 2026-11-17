@@ -5,5 +5,7 @@ namespace NewsAggregator.Services.Parsers
         public override string SourceName => "TN";
 
         public override string BaseUrl => "https://tn.com.ar";
+
+        protected override string[] SectionPaths => new[] { "/politica", "/economia", "/sociedad", "/autos" };
     }
 }

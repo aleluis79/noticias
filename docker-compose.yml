@@ -9,10 +9,12 @@ services:
     environment:
       ASPNETCORE_URLS: http://+:8080
       ASPNETCORE_ENVIRONMENT: Production
+      Archive__Directory: /var/lib/noticias-archive
     ports:
       - "5251:8080"
     volumes:
       - noticias-tts:/var/cache/noticias-tts
+      - noticias-archive:/var/lib/noticias-archive
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
@@ -44,3 +46,4 @@ services:
 
 volumes:
   noticias-tts:
+  noticias-archive:

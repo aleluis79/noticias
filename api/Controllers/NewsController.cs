@@ -1,6 +1,8 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using NewsAggregator.Models;
 using NewsAggregator.Services;
+using NewsAggregator.Services.Archive;
 using NewsAggregator.Services.Grouping;
 using NewsAggregator.Services.Tts;
 
@@ -12,17 +14,23 @@ public class NewsController : ControllerBase
     private readonly IArticleContentService _articleContentService;
     private readonly IStoryGroupingService _storyGroupingService;
     private readonly ITextToSpeechService _textToSpeechService;
+    private readonly IEditionHistoryService _historyService;
+    private readonly EditionClock _clock;
 
     public NewsController(
         INewsAggregationService newsService,
         IArticleContentService articleContentService,
         IStoryGroupingService storyGroupingService,
-        ITextToSpeechService textToSpeechService)
+        ITextToSpeechService textToSpeechService,
+        IEditionHistoryService historyService,
+        EditionClock clock)
     {
         _newsService = newsService;
         _articleContentService = articleContentService;
         _storyGroupingService = storyGroupingService;
         _textToSpeechService = textToSpeechService;
+        _historyService = historyService;
+        _clock = clock;
     }
 
     /// <param name="refresh">Bypass the cache and re-fetch every source.</param>
@@ -44,23 +52,70 @@ public class NewsController : ControllerBase
     /// Front-page view: articles grouped into the stories they report, each
     /// story ordered by how many outlets cover it. <c>generatedAt</c> is the
     /// only time the front page shows, so it is never mistaken for a
-    /// publication date.
+    /// publication date. With <paramref name="date"/> it returns a stored
+    /// edition instead of fetching the sources.
     /// </summary>
     /// <param name="refresh">Bypass the cache and re-fetch every source.</param>
+    /// <param name="date">Stored edition date in YYYY-MM-DD format.</param>
     [HttpGet("/api/stories")]
-    public async Task<ActionResult<StoriesResponse>> GetStories([FromQuery] bool refresh = false)
+    public async Task<ActionResult<StoriesResponse>> GetStories(
+        [FromQuery] bool refresh = false,
+        [FromQuery] string? date = null,
+        CancellationToken cancellationToken = default)
     {
+        var today = _clock.Today;
+
+        if (!string.IsNullOrWhiteSpace(date))
+        {
+            if (!TryParseDate(date, out var requested))
+            {
+                return BadRequest("La fecha debe tener el formato YYYY-MM-DD.");
+            }
+
+            if (requested > today)
+            {
+                return BadRequest("La fecha no puede ser futura.");
+            }
+
+            if (requested < today.AddDays(-_historyService.PreviousDaysAvailable))
+            {
+                return BadRequest("La fecha está fuera del historial disponible.");
+            }
+
+            if (requested < today)
+            {
+                try
+                {
+                    var stored = await _historyService
+                        .GetEditionAsync(requested, cancellationToken)
+                        .ConfigureAwait(false);
+                    return stored is null
+                        ? NotFound("No hay una edición guardada para esa fecha.")
+                        : Ok(stored);
+                }
+                catch (Exception ex)
+                {
+                    return StatusCode(500, $"An error occurred while loading the stored edition: {ex.Message}");
+                }
+            }
+        }
+
         try
         {
             var articles = (await _newsService.GetNewsAsync(refresh)).ToList();
             var stories = _storyGroupingService.Group(articles);
+            var previousDays = await _historyService
+                .GetPreviousDaySummariesAsync(today, cancellationToken)
+                .ConfigureAwait(false);
 
             return Ok(new StoriesResponse
             {
-                GeneratedAt = DateTime.UtcNow,
+                Date = today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                GeneratedAt = _clock.UtcNow.UtcDateTime,
                 ArticleCount = articles.Count,
                 StoryCount = stories.Count,
-                Stories = stories
+                Stories = stories,
+                PreviousDays = previousDays
             });
         }
         catch (Exception ex)
@@ -185,6 +240,14 @@ public class NewsController : ControllerBase
         return File(audio.Bytes, audio.ContentType, enableRangeProcessing: true);
     }
 
+    private static bool TryParseDate(string value, out DateOnly date) =>
+        DateOnly.TryParseExact(
+            value.Trim(),
+            "yyyy-MM-dd",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out date);
+
     private static bool TryParseSegment(string? part, int? index, out TtsSegment segment)
     {
         switch (part?.Trim().ToLowerInvariant())
@@ -203,12 +266,4 @@ public class NewsController : ControllerBase
                 return false;
         }
     }
-}
-
-public class StoriesResponse
-{
-    public DateTime GeneratedAt { get; set; }
-    public int ArticleCount { get; set; }
-    public int StoryCount { get; set; }
-    public IReadOnlyList<NewsStory> Stories { get; set; } = Array.Empty<NewsStory>();
 }

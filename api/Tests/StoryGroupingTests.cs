@@ -186,6 +186,30 @@ public class StoryGroupingServiceTests
     }
 
     [Fact]
+    public void Group_KeepsCoverageWithTwoVersionsPerOutlet()
+    {
+        var sources = new[]
+        {
+            "Clarín", "La Nación", "Infobae", "Página/12", "TN", "Ámbito Financiero",
+            "El Cronista", "Perfil", "C5N", "La Voz del Interior", "El Día", "0221", "Seúl"
+        };
+
+        var articles = sources
+            .SelectMany((source, index) => new[]
+            {
+                Article(source, "León XIV cerró su gira multitudinaria en Lima"),
+                Article(source, $"León XIV cerró su gira multitudinaria en Lima y saludó a los fieles {index}")
+            })
+            .ToArray();
+
+        var stories = CreateService().Group(articles);
+
+        var story = Assert.Single(stories);
+        Assert.Equal(13, story.SourceCount);
+        Assert.Equal(26, story.ArticleCount);
+    }
+
+    [Fact]
     public void Group_ReturnsEmptyForNoArticles()
     {
         Assert.Empty(CreateService().Group(Array.Empty<NewsArticle>()));

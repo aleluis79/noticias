@@ -8,6 +8,8 @@ public class HomePageParserTests
         public override string SourceName => "Test News";
 
         public override string BaseUrl => "https://www.example.com";
+
+        protected override string[] SectionPaths => new[] { "/politica", "/economia" };
     }
 
     [Fact]
@@ -147,6 +149,44 @@ public class HomePageParserTests
         var article = Assert.Single(articles);
         Assert.Equal("El Superniño golpea el Litoral y crece la preocupación", article.Title);
         Assert.StartsWith("Diez ciudades mantienen sus ríos", article.Summary);
+    }
+
+    [Fact]
+    public void Parse_ShouldRespectAnExplicitArticleLimit()
+    {
+        // Arrange
+        const string html = """
+            <html>
+            <body>
+                <a href="/politica/primera-noticia-de-prueba">Primera noticia de prueba del día</a>
+                <a href="/politica/segunda-noticia-de-prueba">Segunda noticia de prueba del día</a>
+                <a href="/politica/tercera-noticia-de-prueba">Tercera noticia de prueba del día</a>
+            </body>
+            </html>
+            """;
+
+        // Act
+        var articles = new TestParser().Parse(html, 1);
+
+        // Assert
+        var article = Assert.Single(articles);
+        Assert.Equal("Primera noticia de prueba del día", article.Title);
+    }
+
+    [Fact]
+    public void SectionUrls_ShouldResolvePathsAgainstTheBaseUrl()
+    {
+        // Act
+        var urls = new TestParser().SectionUrls;
+
+        // Assert
+        Assert.Equal(
+            new[]
+            {
+                "https://www.example.com/politica",
+                "https://www.example.com/economia"
+            },
+            urls);
     }
 
     [Fact]

@@ -27,7 +27,8 @@ La app no solo agrega titulares: extrae y limpia el cuerpo del artículo origina
 
 ## Capabilities and Constraints
 
-- 13 medios argentinos: Clarín, La Nación, Infobae, Página/12, TN, Ámbito Financiero, El Cronista, Perfil, C5N, La Voz del Interior, El Día, 0221 y Seúl; hasta 20 titulares por medio. El README es la fuente de verdad de la cobertura actual.
+- 13 medios argentinos: Clarín, La Nación, Infobae, Página/12, TN, Ámbito Financiero, El Cronista, Perfil, C5N, La Voz del Interior, El Día, 0221 y Seúl; hasta 50 titulares por medio, combinando la portada con las secciones declaradas de cada medio. El README es la fuente de verdad de la cobertura actual.
+- Historial local de las últimas 3 ediciones (hoy, ayer y anteayer). Se guarda en disco, solo con metadatos, y la portada lo muestra en una sección “Días anteriores”. El historial empieza desde el despliegue: si la app no corrió un día, ese día no existe.
 - Extracción por HTML estático con fallback a Chromium headless. La estructura de cada medio puede cambiar y romper su parser; en ese caso la nota se indica como no disponible y se ofrece el original.
 - `GET /api/news` cachea 5 minutos; `GET /api/news/content` acepta solo URLs de las fuentes configuradas (para no ser un proxy abierto) y cachea el cuerpo 30 minutos.
 - Sin cuentas de usuario ni backend de preferencias: tema, tamaño de lectura, velocidad y voz viven en `localStorage`. _(Confirmado en entrevista.)_

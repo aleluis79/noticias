@@ -25,10 +25,18 @@ interface Story {
 }
 
 interface StoriesResponse {
+  date?: string;
   generatedAt: string;
   articleCount: number;
   storyCount: number;
   stories: Story[];
+  previousDays?: NewsDaySummary[];
+}
+
+interface NewsDaySummary {
+  date: string;
+  articleCount: number;
+  storyCount: number;
 }
 
 // Shape returned by GET /api/news/content
@@ -56,6 +64,7 @@ const NOTE_SCALES = [1, 1.15, 1.3, 1.45] as const;
 const COMPARE_PAGE = 12;
 const BREVES = 6;
 const PAGE_SIZE = 18;
+const HISTORY_PAGE_SIZE = 12;
 
 function parseThemePreference(value: string | null): ThemePreference {
   return value === 'light' || value === 'dark' ? value : 'auto';
@@ -144,6 +153,43 @@ function editionTime(raw?: string) {
   return Number.isNaN(date.getTime()) ? null : `${timeFormatter.format(date)} hs`;
 }
 
+const historyDateFormatter = new Intl.DateTimeFormat('es-AR', {
+  day: 'numeric',
+  month: 'long',
+});
+
+const historyFullDateFormatter = new Intl.DateTimeFormat('es-AR', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+});
+
+/** "Ayer · 16 de noviembre", "Antes de ayer · 15 de noviembre" or the full date. */
+function historyDayLabel(date: string, today?: string) {
+  const parsed = new Date(`${date}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return date;
+  }
+
+  const formatted = historyDateFormatter.format(parsed);
+  if (today) {
+    const todayDate = new Date(`${today}T12:00:00`);
+    const daysAgo = Math.round(
+      (todayDate.getTime() - parsed.getTime()) / 86_400_000,
+    );
+
+    if (daysAgo === 1) {
+      return `Ayer · ${formatted}`;
+    }
+
+    if (daysAgo === 2) {
+      return `Antes de ayer · ${formatted}`;
+    }
+  }
+
+  return capitalize(historyFullDateFormatter.format(parsed));
+}
+
 /**
  * Singletons arrive grouped by outlet because the API fetches source by
  * source. Round-robin keeps one outlet from filling the whole breves band.
@@ -225,6 +271,15 @@ function App() {
   const [openSourceUrl, setOpenSourceUrl] = useState<string | null>(null);
   const [contents, setContents] = useState<Record<string, ContentState>>({});
 
+  const [historyEditions, setHistoryEditions] = useState<
+    Record<string, StoriesResponse>
+  >({});
+  const [historyDate, setHistoryDate] = useState<string | null>(null);
+  const [historyStatus, setHistoryStatus] = useState<
+    'idle' | 'loading' | 'error'
+  >('idle');
+  const [historyVisible, setHistoryVisible] = useState(HISTORY_PAGE_SIZE);
+
   const [sourceFilter, setSourceFilter] = useState('all');
   const [titleFilter, setTitleFilter] = useState('');
   const [visibleExtra, setVisibleExtra] = useState(PAGE_SIZE);
@@ -236,6 +291,7 @@ function App() {
     useState<number>(initialNoteSizeIndex);
 
   const requestedContents = useRef(new Set<string>());
+  const historyRequest = useRef(0);
   const mounted = useRef(true);
   const readerRef = useRef<HTMLElement | null>(null);
   const openerRef = useRef<HTMLButtonElement | null>(null);
@@ -395,6 +451,41 @@ function App() {
     }
   };
 
+  const loadHistoryDay = async (date: string) => {
+    setHistoryDate(date);
+    setHistoryVisible(HISTORY_PAGE_SIZE);
+
+    if (historyEditions[date]) {
+      setHistoryStatus('idle');
+      return;
+    }
+
+    const requestId = ++historyRequest.current;
+    setHistoryStatus('loading');
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/stories?date=${encodeURIComponent(date)}`,
+      );
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data: StoriesResponse = await response.json();
+      if (!mounted.current || requestId !== historyRequest.current) {
+        return;
+      }
+
+      setHistoryEditions((previous) => ({ ...previous, [date]: data }));
+      setHistoryStatus('idle');
+    } catch (e) {
+      console.error('Failed to load a previous edition:', e);
+      if (mounted.current && requestId === historyRequest.current) {
+        setHistoryStatus('error');
+      }
+    }
+  };
+
   const loadContent = async (url: string) => {
     if (requestedContents.current.has(url)) {
       return;
@@ -439,13 +530,27 @@ function App() {
   };
 
   const stories = edition?.stories ?? [];
+  const previousDays = edition?.previousDays ?? [];
 
-  const sources = Array.from(
-    new Set(stories.flatMap((story) => story.sources.map((s) => s.sourceName))),
-  ).sort((a, b) => a.localeCompare(b, 'es'));
+  const sourceNames = new Set<string>();
+  for (const story of stories) {
+    for (const source of story.sources) {
+      sourceNames.add(source.sourceName);
+    }
+  }
+  for (const historyEdition of Object.values(historyEditions)) {
+    for (const story of historyEdition.stories) {
+      for (const source of story.sources) {
+        sourceNames.add(source.sourceName);
+      }
+    }
+  }
+  const sources = Array.from(sourceNames).sort((a, b) =>
+    a.localeCompare(b, 'es'),
+  );
 
   const normalizedTitleFilter = normalizeText(titleFilter.trim());
-  const filteredStories = stories.filter((story) => {
+  const matchesStoryFilters = (story: Story) => {
     const matchesSource =
       sourceFilter === 'all' ||
       story.sources.some((source) => source.sourceName === sourceFilter);
@@ -457,7 +562,17 @@ function App() {
       );
 
     return matchesSource && matchesTitle;
-  });
+  };
+
+  const filteredStories = stories.filter(matchesStoryFilters);
+  const historyEdition = historyDate
+    ? historyEditions[historyDate]
+    : undefined;
+  const filteredHistoryStories = historyEdition
+    ? historyEdition.stories.filter(matchesStoryFilters)
+    : [];
+  const visibleHistoryStories = filteredHistoryStories.slice(0, historyVisible);
+  const hasMoreHistory = filteredHistoryStories.length > visibleHistoryStories.length;
 
   const clustered = filteredStories.filter((story) => story.sourceCount > 1);
   const singleSource = interleaveBySource(
@@ -543,7 +658,11 @@ function App() {
   };
 
   const openStoryData = openStoryId
-    ? stories.find((story) => story.id === openStoryId) ?? null
+    ? stories.find((story) => story.id === openStoryId) ??
+      Object.values(historyEditions)
+        .flatMap((history) => history.stories)
+        .find((story) => story.id === openStoryId) ??
+      null
     : null;
   const openSource =
     openStoryData?.sources.find((source) => source.originalUrl === openSourceUrl) ??
@@ -704,7 +823,7 @@ function App() {
               Reintentar
             </button>
           </div>
-        ) : stories.length === 0 ? (
+        ) : stories.length === 0 && previousDays.length === 0 ? (
           <div className="state">
             <h2 className="state__title">Sin noticias por ahora</h2>
             <p className="state__text">
@@ -974,7 +1093,8 @@ function App() {
               )}
             </search>
 
-            <div id="edicion">
+            {stories.length > 0 ? (
+              <div id="edicion">
               {filteredStories.length === 0 ? (
                 <div className="state">
                   <h2 className="state__title">Sin resultados</h2>
@@ -1199,7 +1319,122 @@ function App() {
                   )}
                 </>
               )}
-            </div>
+              </div>
+            ) : (
+              <div className="state">
+                <h2 className="state__title">Sin noticias de hoy</h2>
+                <p className="state__text">
+                  No encontramos notas de hoy. Podés revisar los días anteriores.
+                </p>
+              </div>
+            )}
+
+            {previousDays.length > 0 && (
+              <section className="history" aria-labelledby="history-title">
+                <div className="section-head">
+                  <h2 id="history-title" className="section-head__title">
+                    Días anteriores
+                  </h2>
+                  <p className="section-head__note">
+                    {historyEdition
+                      ? `${historyEdition.articleCount} notas · ${historyEdition.storyCount} historias`
+                      : 'Ediciones guardadas de los últimos días'}
+                  </p>
+                </div>
+
+                <div
+                  className="history__days"
+                  role="group"
+                  aria-label="Elegir un día anterior"
+                >
+                  {previousDays.map((day) => (
+                    <button
+                      key={day.date}
+                      type="button"
+                      className="history__day"
+                      aria-pressed={historyDate === day.date}
+                      onClick={() => void loadHistoryDay(day.date)}
+                    >
+                      {historyDayLabel(day.date, edition?.date)}
+                    </button>
+                  ))}
+                </div>
+
+                {historyStatus === 'loading' && (
+                  <p className="history__status" role="status">
+                    <span className="spinner" aria-hidden="true" />
+                    Cargando las notas de ese día…
+                  </p>
+                )}
+
+                {historyStatus === 'error' && (
+                  <div className="history__error" role="status">
+                    <p>No pudimos cargar las notas de ese día.</p>
+                    {historyDate && (
+                      <button
+                        type="button"
+                        className="refresh-button"
+                        onClick={() => void loadHistoryDay(historyDate)}
+                      >
+                        Reintentar
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {historyEdition && historyStatus !== 'loading' && (
+                  filteredHistoryStories.length === 0 ? (
+                    <p className="history__empty">
+                      No hay notas de ese día que coincidan con los filtros.
+                    </p>
+                  ) : (
+                    <>
+                      <ul className="more__list history__list">
+                        {visibleHistoryStories.map((story) => (
+                          <li key={story.id} className="more__item">
+                            <div className="more__meta">
+                              <span className="more__source">
+                                {story.sourceName}
+                              </span>
+                              {story.sourceCount > 1 && (
+                                <span className="more__count">
+                                  {story.sourceCount} medios
+                                </span>
+                              )}
+                            </div>
+                            <h3 className="more__title">
+                              <button
+                                type="button"
+                                className="more__open"
+                                onClick={(event) =>
+                                  openStory(story, event.currentTarget)
+                                }
+                              >
+                                {story.title}
+                              </button>
+                            </h3>
+                          </li>
+                        ))}
+                      </ul>
+
+                      {hasMoreHistory && (
+                        <button
+                          type="button"
+                          className="more__button"
+                          onClick={() =>
+                            setHistoryVisible(
+                              (current) => current + HISTORY_PAGE_SIZE,
+                            )
+                          }
+                        >
+                          Ver más notas de ese día
+                        </button>
+                      )}
+                    </>
+                  )
+                )}
+              </section>
+            )}
           </>
         )}
       </main>

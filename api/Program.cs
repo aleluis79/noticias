@@ -1,5 +1,6 @@
 using System.Net;
 using NewsAggregator.Services;
+using NewsAggregator.Services.Archive;
 using NewsAggregator.Services.Grouping;
 using NewsAggregator.Services.Tts;
 using NewsAggregator.Models;
@@ -34,6 +35,13 @@ builder.Services.AddSingleton(_ =>
 });
 
 // Register NewsAggregationService once and expose it through its interface
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddOptions<ArchiveOptions>()
+    .Bind(builder.Configuration.GetSection(ArchiveOptions.SectionName))
+    .PostConfigure(options => options.ResolvePaths(builder.Environment.ContentRootPath));
+builder.Services.AddSingleton<IDailyEditionStore, DailyEditionStore>();
+builder.Services.AddSingleton<EditionClock>();
+builder.Services.AddSingleton<IEditionHistoryService, EditionHistoryService>();
 builder.Services.AddSingleton<NewsAggregationService>();
 builder.Services.AddSingleton<INewsAggregationService>(sp => sp.GetRequiredService<NewsAggregationService>());
 builder.Services.AddSingleton<ArticleContentService>();
