@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import './App.css';
+import { ListeningControls } from './speech/ListeningControls';
+import { useArticleSpeech } from './speech/useArticleSpeech';
 
 // Shapes returned by GET /api/stories (api/Models/NewsStory.cs)
 interface StorySource {
@@ -573,6 +575,16 @@ function App() {
       ? visibleAuthor(openContent.author, openSource?.sourceName ?? '')
       : null;
 
+  const speech = useArticleSpeech({
+    articleKey: openSource?.originalUrl ?? null,
+    title: openSource?.title ?? '',
+    author: openAuthor,
+    sourceName: openSource?.sourceName ?? '',
+    paragraphs:
+      openContent?.status === 'ready' ? openContent.paragraphs : [],
+    enabled: openContent?.status === 'ready',
+  });
+
   const editionLabel = editionTime(edition?.generatedAt);
 
   return (
@@ -814,6 +826,21 @@ function App() {
                     </button>
                   </div>
                 </div>
+
+                {speech.supported && openContent?.status === 'ready' && (
+                  <ListeningControls
+                    status={speech.status}
+                    rate={speech.rate}
+                    voices={speech.voices}
+                    voiceURI={speech.voiceURI}
+                    onPlay={speech.play}
+                    onPause={speech.pause}
+                    onResume={speech.resume}
+                    onStop={speech.stop}
+                    onRateChange={speech.setRate}
+                    onVoiceChange={speech.setVoiceURI}
+                  />
+                )}
 
                 {(!openContent || openContent.status === 'loading') && (
                   <p className="reader__status" role="status">

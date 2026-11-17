@@ -10,7 +10,7 @@ RUN_DIR ?= $(CURDIR)/.run
 PID_FILE ?= $(RUN_DIR)/app.pid
 LOG_FILE ?= $(RUN_DIR)/app.log
 
-.PHONY: help install install-browser dev api web start stop restart status logs test test-api lint build build-api build-web check clean docker-build docker-up docker-down docker-logs
+.PHONY: help install install-browser dev api web start stop restart status logs test test-api test-web lint build build-api build-web check clean docker-build docker-up docker-down docker-logs
 
 help: ## Muestra esta ayuda
 	@awk 'BEGIN {FS = ":.*## "; printf "\nUso:\n  make <objetivo>\n\nObjetivos:\n"} /^[a-zA-Z_-]+:.*?## / { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -95,10 +95,13 @@ logs: ## Sigue el log de la app en segundo plano (Ctrl+C para salir)
 	@if [ ! -f "$(LOG_FILE)" ]; then echo "Todavía no hay logs en $(LOG_FILE)."; exit 0; fi
 	@tail -f "$(LOG_FILE)"
 
-test: test-api ## Ejecuta todos los tests
+test: test-api test-web ## Ejecuta todos los tests
 
 test-api: ## Ejecuta los tests de la API
 	$(DOTNET) test $(API_PROJECT) --nologo
+
+test-web: ## Ejecuta los tests del frontend
+	cd $(WEB_DIR) && $(PNPM) test
 
 lint: ## Ejecuta Oxlint sobre el frontend
 	cd $(WEB_DIR) && $(PNPM) lint

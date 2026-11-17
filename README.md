@@ -8,6 +8,7 @@ Agregador de noticias que reúne los principales titulares de los diarios argent
 - Extracción mediante HTML estático y fallback a un navegador Chromium headless para los sitios que renderizan con JavaScript.
 - Caché en memoria de 5 minutos para los titulares y de 30 minutos para el cuerpo de cada nota.
 - Lectura completa de la nota dentro de la propia interfaz, extrayendo y limpiando los párrafos del artículo original.
+- Reproducción por voz de la nota completa con la voz del navegador, con pausa, velocidad y elección de voz en español.
 - Autor de la nota cuando el medio lo publica (se omite si la firma es solo el nombre del diario).
 - Filtros por medio y por título, tema claro/oscuro/automático y control del tamaño de lectura (persistidos en `localStorage`).
 - API REST documentada con Swagger en desarrollo.
@@ -73,8 +74,11 @@ El frontend queda en `http://localhost:5173`. La URL de la API está definida en
 | --- | --- |
 | `pnpm dev` | Servidor de desarrollo con HMR |
 | `pnpm build` | Chequeo de tipos y build de producción |
+| `pnpm test` | Ejecuta los tests del frontend (Vitest + jsdom) |
 | `pnpm lint` | Lint con Oxlint |
 | `pnpm preview` | Vista previa del build |
+
+La reproducción por voz usa `speechSynthesis` y las voces en español instaladas en el dispositivo; no depende de la API ni envía el texto a ningún servicio. La calidad de la voz cambia según el sistema operativo y no continúa con la pantalla bloqueada.
 
 ## Docker
 
@@ -108,7 +112,8 @@ En la raíz hay un `Makefile` con los comandos más habituales:
 | `make stop` / `make restart` | Detiene o reinicia la app en segundo plano |
 | `make status` / `make logs` | Muestra si está corriendo o sigue el log en vivo |
 | `make install-browser` | Instala Chromium para el fallback de Playwright |
-| `make test` | Ejecuta los tests de la API |
+| `make test` | Ejecuta los tests de la API y del frontend |
+| `make test-api` / `make test-web` | Ejecuta solo los tests de la API o del frontend |
 | `make lint` | Ejecuta Oxlint sobre el frontend |
 | `make build` | Compila la API y el frontend |
 | `make check` | Ejecuta lint y tests |

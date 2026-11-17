@@ -22,7 +22,7 @@ La app no solo agrega titulares: extrae y limpia el cuerpo del artículo origina
 
 - Uso cotidiano de actualización: abrir la portada, escanear titulares, filtrar por medio o por texto del título, leer una nota y volver.
 - Sesiones breves en celular y sesiones más largas en escritorio.
-- Tema (automático, claro u oscuro) y tamaño de lectura ajustables y persistidos en el dispositivo.
+- Tema (automático, claro u oscuro), tamaño de lectura y reproducción por voz ajustables y persistidos en el dispositivo.
 - La app corre con la API .NET 8 y el frontend React/Vite del repo, o con Docker Compose / `make start` en un servidor.
 
 ## Capabilities and Constraints
@@ -30,7 +30,9 @@ La app no solo agrega titulares: extrae y limpia el cuerpo del artículo origina
 - 13 medios argentinos: Clarín, La Nación, Infobae, Página/12, TN, Ámbito Financiero, El Cronista, Perfil, C5N, La Voz del Interior, El Día, 0221 y Seúl; hasta 20 titulares por medio. El README es la fuente de verdad de la cobertura actual.
 - Extracción por HTML estático con fallback a Chromium headless. La estructura de cada medio puede cambiar y romper su parser; en ese caso la nota se indica como no disponible y se ofrece el original.
 - `GET /api/news` cachea 5 minutos; `GET /api/news/content` acepta solo URLs de las fuentes configuradas (para no ser un proxy abierto) y cachea el cuerpo 30 minutos.
-- Sin cuentas de usuario ni backend de preferencias: tema y tamaño de lectura viven en `localStorage`. _(Confirmado en entrevista.)_
+- Sin cuentas de usuario ni backend de preferencias: tema, tamaño de lectura, velocidad y voz viven en `localStorage`. _(Confirmado en entrevista.)_
+- La nota completa se puede escuchar con la voz del navegador (`speechSynthesis`), con pausa, velocidad y elección de voz en español. El texto no sale del dispositivo: no hay TTS en servidor ni servicio externo.
+- La reproducción se detiene al cerrar la nota o cambiar de medio; no sigue con la pantalla bloqueada. La calidad de la voz depende de las voces instaladas en cada dispositivo.
 - El autor se muestra solo cuando firma una persona; se omite si coincide con el nombre del medio o es una firma genérica.
 - La lectura no reemplaza al medio: siempre se ofrece "Abrir en <medio>", se atribuye medio y autor, y no se reescribe ni se resume con IA. _(Confirmado en entrevista.)_
 - Los filtros combinan medio y texto del título; no hay búsqueda sobre el cuerpo ni historial de lectura.
