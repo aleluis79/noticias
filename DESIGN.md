@@ -256,7 +256,7 @@ Grupo segmentado en píldora con borde Filete Reforzado: botón "A−", valor po
 El cuerpo extraído se compone en serif a `calc(1.06rem × --note-scale)`, interlineado 1.7, párrafos separados por 1.05em, 68ch de medida y `overflow-wrap: break-word`. Antes del cuerpo, el autor se muestra en 0.84rem/600 con la etiqueta "Por" en versalitas rojas; solo aparece cuando firma una persona. Al pie, el enlace "Abrir en <medio>" cierra el panel como píldora con ícono externo de 14px.
 
 ### States
-Los estados vacíos y de error son bloques centrados con título serif de 1.6rem, texto de 0.95rem a 48ch y, cuando corresponde, una píldora de reintento. El error de extracción es un bloque con filete rojo a la izquierda y `role="status"`. El aviso de actualización fallida usa el mismo recurso, arriba. El spinner es un anillo de 1.1rem con borde Filete Reforzado y sector superior rojo, acompañado siempre de texto ("Reuniendo las noticias del día…", "Cargando la nota completa…").
+Los estados vacíos y de error son bloques centrados con título serif de 1.6rem, texto de 0.95rem a 48ch y, cuando corresponde, una píldora de reintento. El error de extracción es un bloque con borde rojo de 1px y `role="status"`. El aviso de actualización fallida usa el mismo recurso, arriba, y queda pegado al borde superior de la ventana para que se vea desde cualquier punto de la edición. El spinner es un anillo de 1.1rem con borde Filete Reforzado y sector superior rojo, acompañado siempre de texto ("Reuniendo las noticias del día…", "Cargando la nota completa…").
 
 ## Do's and Don'ts
 

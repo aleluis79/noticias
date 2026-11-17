@@ -111,6 +111,16 @@ const timeFormatter = new Intl.DateTimeFormat('es-AR', {
 
 const todayLabel = capitalize(fullDateFormatter.format(new Date()));
 
+const shortDateFormatter = new Intl.DateTimeFormat('es-AR', {
+  day: 'numeric',
+  month: 'short',
+});
+
+const shortDateLabel = shortDateFormatter
+  .format(new Date())
+  .replace('.', '')
+  .toUpperCase();
+
 function capitalize(text: string) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
@@ -228,6 +238,8 @@ function App() {
   const readerRef = useRef<HTMLElement | null>(null);
   const openerRef = useRef<HTMLButtonElement | null>(null);
   const openScrollRef = useRef(0);
+  const moreCompareRef = useRef<HTMLButtonElement | null>(null);
+  const moreStoriesRef = useRef<HTMLButtonElement | null>(null);
   const pendingScrollRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -574,6 +586,7 @@ function App() {
           <h1 className="masthead__title">Noticias Argentinas</h1>
           <p className="masthead__meta">
             <span className="masthead__date">{todayLabel}</span>
+            <span className="masthead__date-short">{shortDateLabel}</span>
             {editionLabel && (
               <span className="masthead__updated">
                 Actualizado {editionLabel}
@@ -582,7 +595,7 @@ function App() {
           </p>
         </div>
         <p className="masthead__subtitle">
-          Los titulares de los diarios del país, con la nota completa en el mismo
+          Los titulares de los medios del país, con la nota completa en el mismo
           lugar.
         </p>
         <div className="masthead__actions">
@@ -635,9 +648,29 @@ function App() {
       </header>
 
       {refreshError && (
-        <p className="notice" role="status">
-          {refreshError}
-        </p>
+        <div className="notice" role="status">
+          <p className="notice__text">{refreshError}</p>
+          <button
+            type="button"
+            className="notice__close"
+            onClick={() => setRefreshError(null)}
+            aria-label="Cerrar el aviso"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg>
+          </button>
+        </div>
       )}
 
       <main>
@@ -791,7 +824,7 @@ function App() {
 
                 {openContent?.status === 'error' && (
                   <p className="reader__error" role="status">
-                    No pudimos extraer la nota completa de {openSource.sourceName}.
+                    No pudimos traer la nota completa de {openSource.sourceName}.
                     Podés leerla en el medio original.
                   </p>
                 )}
@@ -842,18 +875,42 @@ function App() {
                 <label className="filters__label" htmlFor="title-filter">
                   Buscar por título
                 </label>
-                <input
-                  id="title-filter"
-                  name="title"
-                  type="search"
-                  className="filters__input"
-                  placeholder="Milei, inflación, Boca…"
-                  value={titleFilter}
-                  onChange={(event) => setTitleFilter(event.target.value)}
-                  autoComplete="off"
-                  spellCheck={false}
-                  enterKeyHint="search"
-                />
+                <div className="filters__search">
+                  <input
+                    id="title-filter"
+                    name="title"
+                    type="search"
+                    className="filters__input"
+                    placeholder="Milei, inflación, Boca…"
+                    value={titleFilter}
+                    onChange={(event) => setTitleFilter(event.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                    enterKeyHint="search"
+                  />
+                  {titleFilter !== '' && (
+                    <button
+                      type="button"
+                      className="filters__search-clear"
+                      onClick={() => setTitleFilter('')}
+                      aria-label="Borrar la búsqueda"
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M18 6 6 18" />
+                        <path d="m6 6 12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="filters__field">
@@ -876,13 +933,8 @@ function App() {
                 </select>
               </div>
 
-              <div className="filters__footer">
-                <p className="filters__count">
-                  {hasFilters
-                    ? `${filteredStories.length} de ${stories.length} historias · ${filteredArticleCount} de ${totalArticleCount} notas`
-                    : `${stories.length} historias · ${totalArticleCount} notas`}
-                </p>
-                {hasFilters && (
+              {hasFilters && (
+                <div className="filters__footer">
                   <button
                     type="button"
                     className="filters__clear"
@@ -890,8 +942,8 @@ function App() {
                   >
                     Limpiar filtros
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </search>
 
             <div id="edicion">
@@ -924,7 +976,9 @@ function App() {
                           Las historias del día
                         </h2>
                         <p className="section-head__note">
-                          {clustered.length} historias con más de un medio
+                          {hasFilters
+                            ? `${filteredStories.length} de ${stories.length} historias`
+                            : `${clustered.length} con más de un medio · ${totalArticleCount} notas`}
                         </p>
                       </div>
 
@@ -985,19 +1039,19 @@ function App() {
                                 );
                               })}
                             </div>
-                            <ul className="matrix__sources">
-                              {Array.from(
-                                new Set(
-                                  story.sources.map(
-                                    (item) => item.sourceName,
-                                  ),
-                                ),
-                              ).map((source) => (
-                                <li key={source} className="chip">
-                                  {source}
-                                </li>
-                              ))}
-                            </ul>
+                            <p className="matrix__outlets">
+                              {(() => {
+                                const outlets = outletsOf(story);
+                                const shown = outlets.slice(0, 4);
+                                const rest = outlets.length - shown.length;
+                                return (
+                                  <>
+                                    {shown.join(' · ')}
+                                    {rest > 0 ? ` · +${rest}` : ''}
+                                  </>
+                                );
+                              })()}
+                            </p>
                           </li>
                         ))}
                       </ol>
@@ -1006,11 +1060,17 @@ function App() {
                         <button
                           type="button"
                           className="more__button"
-                          onClick={() =>
+                          ref={moreCompareRef}
+                          onClick={() => {
                             setVisibleCompare(
                               (current) => current + COMPARE_PAGE,
-                            )
-                          }
+                            );
+                            window.requestAnimationFrame(() =>
+                              moreCompareRef.current?.scrollIntoView({
+                                block: 'nearest',
+                              }),
+                            );
+                          }}
                         >
                           Ver más historias comparadas
                         </button>
@@ -1025,7 +1085,9 @@ function App() {
                           Breves · una sola voz
                         </h2>
                         <p className="section-head__note">
-                          Notas que solo trae un medio
+                          {hasFilters
+                            ? `${filteredArticleCount} de ${totalArticleCount} notas`
+                            : 'Notas que solo trae un medio'}
                         </p>
                       </div>
                       <ul className="breves__grid">
@@ -1092,9 +1154,15 @@ function App() {
                         <button
                           type="button"
                           className="more__button"
-                          onClick={() =>
-                            setVisibleExtra((current) => current + PAGE_SIZE)
-                          }
+                          ref={moreStoriesRef}
+                          onClick={() => {
+                            setVisibleExtra((current) => current + PAGE_SIZE);
+                            window.requestAnimationFrame(() =>
+                              moreStoriesRef.current?.scrollIntoView({
+                                block: 'nearest',
+                              }),
+                            );
+                          }}
                         >
                           Ver más historias
                         </button>
