@@ -248,4 +248,140 @@ public class ArticleContentServiceTests
 
         Assert.Null(title);
     }
+
+    [Fact]
+    public void IsSeulRegistrationWall_ShouldOnlyMatchTheSignupWidget()
+    {
+        const string freePage = """
+            <html>
+            <head>
+                <link rel="stylesheet" id="seul-paywall-css" href="https://seul.ar/assets/acceso-restringido.css" />
+                <script id="seul-paywall-js" src="https://seul.ar/assets/acceso-restringido.js"></script>
+            </head>
+            <body><article><p>El cuerpo real de la nota.</p></article></body>
+            </html>
+            """;
+
+        const string gatedPage = """
+            <html>
+            <body>
+                <div class="seul-paywall" data-seul-widget>
+                    <h2 class="seul-paywall__titulo">Seguí leyendo. Es gratis.</h2>
+                    <p class="seul-paywall__subtitulo">Creá tu cuenta y accedé a todos los artículos de Seúl.</p>
+                </div>
+            </body>
+            </html>
+            """;
+
+        Assert.False(ArticleContentService.IsSeulRegistrationWall(freePage));
+        Assert.True(ArticleContentService.IsSeulRegistrationWall(gatedPage));
+    }
+
+    [Fact]
+    public void ExtractFeedParagraphs_ShouldReturnTheFullBodyAndDropTheFeedFooter()
+    {
+        const string feed = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+                <channel>
+                    <item>
+                        <title>La revancha de los normies</title>
+                        <link>https://seul.ar/la-revancha-de-los-normies/</link>
+                        <pubDate>Thu, 05 Nov 2026 03:29:06 +0000</pubDate>
+                        <content:encoded><![CDATA[
+                            <p>Primer párrafo completo del cuerpo de la nota, publicado en el RSS sin el muro de registro que aparece en el sitio.</p>
+                            <p>Segundo párrafo completo del cuerpo de la nota, también recuperado desde el feed público del medio.</p>
+                            <p>La entrada La revancha de los normies se publicó primero en Seúl .</p>
+                        ]]></content:encoded>
+                    </item>
+                </channel>
+            </rss>
+            """;
+
+        var paragraphs = ArticleContentService.ExtractFeedParagraphs(
+            feed,
+            "https://seul.ar/la-revancha-de-los-normies/");
+
+        Assert.Equal(2, paragraphs.Count);
+        Assert.StartsWith("Primer párrafo", paragraphs[0]);
+        Assert.StartsWith("Segundo párrafo", paragraphs[1]);
+        Assert.DoesNotContain(paragraphs, paragraph => paragraph.Contains("La entrada"));
+        Assert.DoesNotContain(paragraphs, paragraph => paragraph.Contains("Creá tu cuenta"));
+    }
+
+    [Fact]
+    public void ExtractFeedParagraphs_ShouldIgnoreAnEntryThatOnlyHasTheSignupWall()
+    {
+        const string feed = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+                <channel>
+                    <item>
+                        <link>https://seul.ar/nota-bloqueada/</link>
+                        <content:encoded><![CDATA[
+                            <div class="seul-paywall" data-seul-widget>
+                                <h2 class="seul-paywall__titulo">Seguí leyendo. Es gratis.</h2>
+                                <p>Creá tu cuenta y accedé a todos los artículos de Seúl.</p>
+                            </div>
+                        ]]></content:encoded>
+                    </item>
+                </channel>
+            </rss>
+            """;
+
+        var paragraphs = ArticleContentService.ExtractFeedParagraphs(
+            feed,
+            "https://seul.ar/nota-bloqueada/");
+
+        Assert.Empty(paragraphs);
+    }
+
+    [Fact]
+    public void ExtractPublishedDate_ShouldReadTheStructuredData()
+    {
+        const string html = """
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+                <script type="application/ld+json">
+                {
+                    "@context": "https://schema.org",
+                    "@type": "Article",
+                    "headline": "La revancha de los normies",
+                    "datePublished": "2026-11-05T03:29:06+00:00"
+                }
+                </script>
+            </head>
+            <body></body>
+            </html>
+            """;
+
+        var date = ArticleContentService.ExtractPublishedDate(html);
+
+        Assert.NotNull(date);
+        Assert.Equal(2026, date!.Value.Year);
+        Assert.Equal(11, date.Value.Month);
+        Assert.Equal(5, date.Value.Day);
+    }
+
+    [Fact]
+    public void ExtractPublishedDate_ShouldReadTheMetaTag()
+    {
+        const string html = """
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+                <meta property="article:published_time" content="2025-05-25T07:00:14+00:00" />
+            </head>
+            <body></body>
+            </html>
+            """;
+
+        var date = ArticleContentService.ExtractPublishedDate(html);
+
+        Assert.NotNull(date);
+        Assert.Equal(2025, date!.Value.Year);
+        Assert.Equal(5, date.Value.Month);
+        Assert.Equal(25, date.Value.Day);
+    }
 }

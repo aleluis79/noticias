@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using AngleSharp.Dom;
 using AngleSharp.Html.Parser;
 using Microsoft.Extensions.Logging;
@@ -18,11 +20,36 @@ namespace NewsAggregator.Services
     {
         private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(30);
         private static readonly TimeSpan FailureCacheDuration = TimeSpan.FromMinutes(2);
+        private static readonly TimeSpan FeedCacheDuration = TimeSpan.FromMinutes(10);
+        private static readonly TimeSpan FeedTimeout = TimeSpan.FromSeconds(15);
 
         private const int MinParagraphLength = 40;
         private const int MinBodyCharacters = 300;
         private const int MaxParagraphs = 200;
         private const int MaxCharacters = 30000;
+        private const int MaxFeedPages = 6;
+
+        private const string SeulHost = "seul.ar";
+
+        /// <summary>
+        /// WordPress appends the post title to the RSS body. It is not part of the note.
+        /// </summary>
+        private static readonly Regex FeedTrailerRegex = new(
+            @"\s*La entrada .*? se public[oó] primero en .*$",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
+
+        /// <summary>
+        /// The registration wall that Seúl inserts into some articles. The stylesheet
+        /// and scripts carry "seul-paywall" on every page, so the widget itself is what
+        /// identifies a gated note.
+        /// </summary>
+        private static readonly string[] SeulPaywallMarkers =
+        {
+            "data-seul-widget",
+            "seul-paywall__titulo",
+            "Seguí leyendo. Es gratis.",
+            "Creá tu cuenta y accedé a todos los artículos de Seúl."
+        };
 
         /// <summary>Containers that news sites usually wrap the body of a note in.</summary>
         private static readonly string[] BodySelectors =
@@ -115,20 +142,28 @@ namespace NewsAggregator.Services
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         private readonly NewsAggregationService _pageFetcher;
+        private readonly HttpClient _httpClient;
         private readonly ILogger<ArticleContentService> _logger;
 
         private readonly ConcurrentDictionary<string, CacheEntry> _cache =
             new(StringComparer.OrdinalIgnoreCase);
 
+        private readonly ConcurrentDictionary<string, FeedCacheEntry> _feedCache =
+            new(StringComparer.OrdinalIgnoreCase);
+
         public ArticleContentService(
             NewsAggregationService pageFetcher,
+            HttpClient httpClient,
             ILogger<ArticleContentService> logger)
         {
             _pageFetcher = pageFetcher;
+            _httpClient = httpClient;
             _logger = logger;
         }
 
         private sealed record CacheEntry(DateTime ExpiresAt, ArticleContent? Content);
+
+        private sealed record FeedCacheEntry(DateTime ExpiresAt, string Xml);
 
         public bool IsSupportedUrl(string? url) =>
             NewsAggregationService.IsSupportedArticleUrl(url);
@@ -159,31 +194,405 @@ namespace NewsAggregator.Services
 
             cancellationToken.ThrowIfCancellationRequested();
 
+            var walled = IsSeulRegistrationWall(html);
             var paragraphs = html is null
                 ? Array.Empty<string>()
-                : ExtractParagraphs(html);
+                : walled
+                    ? await TryGetSeulFeedParagraphsAsync(cacheKey, html, cancellationToken)
+                        .ConfigureAwait(false)
+                    : ExtractParagraphs(html);
 
-            var content = paragraphs.Count == 0
+            var content = html is null || (paragraphs.Count == 0 && !walled)
                 ? null
                 : new ArticleContent
                 {
                     Url = cacheKey,
-                    Title = html is null ? string.Empty : ExtractTitle(html) ?? string.Empty,
-                    Author = html is null ? string.Empty : ExtractAuthor(html) ?? string.Empty,
-                    Paragraphs = paragraphs
+                    Title = ExtractTitle(html!) ?? string.Empty,
+                    Author = ExtractAuthor(html!) ?? string.Empty,
+                    Paragraphs = paragraphs,
+                    RequiresAccount = walled && paragraphs.Count == 0
                 };
 
             _cache[cacheKey] = new CacheEntry(
-                DateTime.UtcNow.Add(content is null ? FailureCacheDuration : CacheDuration),
+                DateTime.UtcNow.Add(
+                    content is null || content.RequiresAccount
+                        ? FailureCacheDuration
+                        : CacheDuration),
                 content);
 
-            if (content is null)
+            if (content?.RequiresAccount == true)
+            {
+                _logger.LogInformation(
+                    "{Url} is behind Seúl's free registration wall and was not found in its RSS feed",
+                    cacheKey);
+            }
+            else if (content is null)
             {
                 _logger.LogInformation("No article body could be extracted from {Url}", cacheKey);
             }
 
             return content;
         }
+
+        /// <summary>
+        /// True when Seúl served its registration wall instead of the article body.
+        /// Visible for tests.
+        /// </summary>
+        internal static bool IsSeulRegistrationWall(string? html)
+        {
+            if (string.IsNullOrWhiteSpace(html))
+            {
+                return false;
+            }
+
+            return SeulPaywallMarkers.Any(marker =>
+                html.Contains(marker, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// Seúl's public RSS still publishes the full body of the notes it gates on the
+        /// website. When the article page only has the registration wall, look for the
+        /// same URL in the monthly feed (and then the main feed). Visible for tests.
+        /// </summary>
+        private async Task<IReadOnlyList<string>> TryGetSeulFeedParagraphsAsync(
+            string articleUrl,
+            string articleHtml,
+            CancellationToken cancellationToken)
+        {
+            if (!Uri.TryCreate(articleUrl, UriKind.Absolute, out var articleUri) ||
+                !HostMatches(articleUri.Host, SeulHost))
+            {
+                return Array.Empty<string>();
+            }
+
+            var published = ExtractPublishedDate(articleHtml);
+
+            foreach (var feedUrl in BuildFeedUrls(articleUri, published))
+            {
+                var paragraphs = await SearchFeedAsync(
+                        feedUrl,
+                        articleUrl,
+                        published,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (paragraphs.Count > 0)
+                {
+                    _logger.LogInformation(
+                        "Recovered the body of {Url} from Seúl's RSS",
+                        articleUrl);
+                    return paragraphs;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            return Array.Empty<string>();
+        }
+
+        private static IEnumerable<string> BuildFeedUrls(Uri articleUri, DateTime? published)
+        {
+            var root = articleUri.GetLeftPart(UriPartial.Authority);
+
+            if (published is { } date)
+            {
+                yield return $"{root}/{date:yyyy}/{date:MM}/feed/";
+            }
+
+            yield return $"{root}/feed/";
+        }
+
+        /// <summary>
+        /// Walks the feed pages until the article appears or the feed moves past its
+        /// publication date. Monthly feeds have at most a handful of pages.
+        /// </summary>
+        private async Task<IReadOnlyList<string>> SearchFeedAsync(
+            string feedUrl,
+            string articleUrl,
+            DateTime? published,
+            CancellationToken cancellationToken)
+        {
+            for (var page = 1; page <= MaxFeedPages; page++)
+            {
+                var pageUrl = page == 1 ? feedUrl : $"{feedUrl}?paged={page}";
+                var xml = await GetFeedXmlAsync(pageUrl, cancellationToken).ConfigureAwait(false);
+                if (xml is null)
+                {
+                    return Array.Empty<string>();
+                }
+
+                var items = ParseFeedItems(xml);
+                if (items.Count == 0)
+                {
+                    return Array.Empty<string>();
+                }
+
+                var match = FindMatchingFeedItem(items, articleUrl);
+                if (match is not null)
+                {
+                    var paragraphs = ExtractFeedParagraphs(match);
+                    if (paragraphs.Count > 0)
+                    {
+                        return paragraphs;
+                    }
+                }
+
+                DateTime? oldest = null;
+                foreach (var item in items)
+                {
+                    if (item.Published is { } date && (oldest is null || date < oldest))
+                    {
+                        oldest = date;
+                    }
+                }
+
+                // The feed is ordered newest first: once it is older than the note,
+                // the note is not in the feed (or the slug no longer matches).
+                if (published is { } target &&
+                    oldest is { } oldestDate &&
+                    oldestDate.Date < target.Date.AddDays(-1))
+                {
+                    return Array.Empty<string>();
+                }
+            }
+
+            return Array.Empty<string>();
+        }
+
+        private async Task<string?> GetFeedXmlAsync(
+            string url,
+            CancellationToken cancellationToken)
+        {
+            if (_feedCache.TryGetValue(url, out var cached))
+            {
+                if (cached.ExpiresAt > DateTime.UtcNow)
+                {
+                    return cached.Xml;
+                }
+
+                _feedCache.TryRemove(url, out _);
+            }
+
+            try
+            {
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(FeedTimeout);
+
+                using var response = await _httpClient
+                    .GetAsync(url, HttpCompletionOption.ResponseHeadersRead, timeout.Token)
+                    .ConfigureAwait(false);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogDebug(
+                        "GET {Url} returned {StatusCode} while looking for a Seúl article",
+                        url,
+                        (int)response.StatusCode);
+                    return null;
+                }
+
+                var xml = await response.Content
+                    .ReadAsStringAsync(timeout.Token)
+                    .ConfigureAwait(false);
+
+                _feedCache[url] = new FeedCacheEntry(
+                    DateTime.UtcNow.Add(FeedCacheDuration),
+                    xml);
+
+                return xml;
+            }
+            catch (Exception exception) when (
+                exception is HttpRequestException or OperationCanceledException)
+            {
+                _logger.LogDebug(exception, "Seúl feed fetch failed for {Url}", url);
+                return null;
+            }
+        }
+
+        private static IReadOnlyList<FeedItem> ParseFeedItems(string xml)
+        {
+            if (string.IsNullOrWhiteSpace(xml))
+            {
+                return Array.Empty<FeedItem>();
+            }
+
+            XDocument document;
+            try
+            {
+                document = XDocument.Parse(xml, LoadOptions.None);
+            }
+            catch (Exception exception) when (exception is System.Xml.XmlException or ArgumentException)
+            {
+                return Array.Empty<FeedItem>();
+            }
+
+            XNamespace content = "http://purl.org/rss/1.0/modules/content/";
+
+            return document
+                .Descendants("item")
+                .Select(item => new FeedItem(
+                    (string?)item.Element("link"),
+                    (string?)item.Element(content + "encoded")
+                        ?? (string?)item.Element("description"),
+                    ParseFeedDate((string?)item.Element("pubDate"))))
+                .ToList();
+        }
+
+        private static DateTime? ParseFeedDate(string? value)
+        {
+            return DateTime.TryParse(
+                value,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal,
+                out var date)
+                ? date
+                : null;
+        }
+
+        private static FeedItem? FindMatchingFeedItem(
+            IReadOnlyList<FeedItem> items,
+            string articleUrl) =>
+            items.FirstOrDefault(item => UrlsMatch(item.Link, articleUrl));
+
+        /// <summary>
+        /// Extracts the body of one article from a single RSS page. Visible for tests.
+        /// </summary>
+        internal static IReadOnlyList<string> ExtractFeedParagraphs(
+            string feedXml,
+            string articleUrl)
+        {
+            var match = FindMatchingFeedItem(ParseFeedItems(feedXml), articleUrl);
+            return match is null
+                ? Array.Empty<string>()
+                : ExtractFeedParagraphs(match);
+        }
+
+        private static IReadOnlyList<string> ExtractFeedParagraphs(FeedItem item)
+        {
+            if (string.IsNullOrWhiteSpace(item.ContentHtml) ||
+                IsSeulRegistrationWall(item.ContentHtml))
+            {
+                return Array.Empty<string>();
+            }
+
+            var paragraphs = ExtractParagraphs(item.ContentHtml);
+
+            return paragraphs
+                .Select(paragraph => FeedTrailerRegex.Replace(paragraph, string.Empty).Trim())
+                .Where(paragraph => paragraph.Length >= MinParagraphLength)
+                .ToList();
+        }
+
+        private static bool UrlsMatch(string? candidate, string articleUrl)
+        {
+            if (!Uri.TryCreate(candidate, UriKind.Absolute, out var candidateUri) ||
+                !Uri.TryCreate(articleUrl, UriKind.Absolute, out var articleUri))
+            {
+                return false;
+            }
+
+            return HostMatches(candidateUri.Host, articleUri.Host) &&
+                   string.Equals(
+                       candidateUri.AbsolutePath.TrimEnd('/'),
+                       articleUri.AbsolutePath.TrimEnd('/'),
+                       StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool HostMatches(string host, string otherHost) =>
+            string.Equals(
+                TrimWww(host),
+                TrimWww(otherHost),
+                StringComparison.OrdinalIgnoreCase);
+
+        private static string TrimWww(string host) =>
+            host.StartsWith("www.", StringComparison.OrdinalIgnoreCase) ? host[4..] : host;
+
+        /// <summary>
+        /// Reads the publication date from metadata or structured data. The monthly
+        /// RSS archive is built from it. Visible for tests.
+        /// </summary>
+        internal static DateTime? ExtractPublishedDate(string html)
+        {
+            if (string.IsNullOrWhiteSpace(html))
+            {
+                return null;
+            }
+
+            var document = new HtmlParser().ParseDocument(html);
+
+            foreach (var selector in new[]
+                     {
+                         "meta[property='article:published_time']",
+                         "meta[name='article:published_time']",
+                         "meta[itemprop='datePublished']",
+                         "time[datetime]"
+                     })
+            {
+                var element = document.QuerySelector(selector);
+                var value = element?.GetAttribute("content")
+                            ?? element?.GetAttribute("datetime");
+
+                if (TryParsePublishedDate(value, out var date))
+                {
+                    return date;
+                }
+            }
+
+            foreach (var script in document.QuerySelectorAll("script[type='application/ld+json']"))
+            {
+                JsonDocument json;
+                try
+                {
+                    json = JsonDocument.Parse(script.TextContent);
+                }
+                catch (JsonException)
+                {
+                    continue;
+                }
+
+                using (json)
+                {
+                    foreach (var node in EnumerateJsonLdNodes(json.RootElement))
+                    {
+                        if (node.ValueKind != JsonValueKind.Object)
+                        {
+                            continue;
+                        }
+
+                        var raw = GetString(node, "datePublished")
+                                  ?? GetString(node, "dateCreated");
+
+                        if (TryParsePublishedDate(raw, out var date))
+                        {
+                            return date;
+                        }
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static bool TryParsePublishedDate(string? value, out DateTime date)
+        {
+            if (DateTimeOffset.TryParse(
+                    value,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AllowWhiteSpaces,
+                    out var parsed))
+            {
+                date = parsed.DateTime;
+                return true;
+            }
+
+            date = default;
+            return false;
+        }
+
+        private sealed record FeedItem(
+            string? Link,
+            string? ContentHtml,
+            DateTime? Published);
 
         /// <summary>
         /// Extracts the author byline from structured data, meta tags or the visible
@@ -581,6 +990,12 @@ namespace NewsAggregator.Services
 
             return new List<string>();
         }
+
+        private static string? GetString(JsonElement node, string property) =>
+            node.TryGetProperty(property, out var value) &&
+            value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
 
         private static IEnumerable<JsonElement> EnumerateJsonLdNodes(JsonElement root)
         {

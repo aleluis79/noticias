@@ -47,11 +47,13 @@ interface ArticleContent {
   title: string;
   author?: string;
   paragraphs: string[];
+  requiresAccount?: boolean;
 }
 
 type ContentState =
   | { status: 'loading' }
   | { status: 'error' }
+  | { status: 'gated' }
   | { status: 'ready'; paragraphs: string[]; author: string | null };
 
 // Empty in Docker builds so requests go through the nginx reverse proxy.
@@ -655,6 +657,15 @@ function App() {
         return;
       }
 
+      if (data.requiresAccount) {
+        requestedContents.current.delete(url);
+        setContents((previous) => ({
+          ...previous,
+          [url]: { status: 'gated' },
+        }));
+        return;
+      }
+
       if (paragraphs.length === 0) {
         requestedContents.current.delete(url);
         setContents((previous) => ({ ...previous, [url]: { status: 'error' } }));
@@ -1180,6 +1191,13 @@ function App() {
                   <p className="reader__error" role="status">
                     No pudimos traer la nota completa de {openSource.sourceName}.
                     Podés leerla en el medio original.
+                  </p>
+                )}
+
+                {openContent?.status === 'gated' && (
+                  <p className="reader__error" role="status">
+                    {openSource.sourceName} pide crear una cuenta para leer esta
+                    nota completa. Podés abrirla en el medio original.
                   </p>
                 )}
 

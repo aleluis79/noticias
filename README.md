@@ -366,6 +366,8 @@ los tests. Corré un snapshot por día durante unos días antes de tocarlo.
 
 El endpoint de contenido valida automáticamente que la URL pertenezca a alguna de las fuentes registradas, así que una fuente nueva también queda habilitada para la lectura completa.
 
+Seúl bloquea algunas notas con un registro gratuito. Cuando la página devuelve ese muro en lugar del cuerpo, la API busca la misma nota en el RSS público del mes (`/AAAA/MM/feed/`) y usa el texto completo que publica el feed. Si la nota no aparece allí, el lector avisa que el medio pide crear una cuenta en vez de mostrar el cartel de registro como si fuera la nota.
+
 ## Notas
 
 - El scraping depende de la estructura HTML de cada medio: si un sitio cambia su maquetación, puede ser necesario ajustar su parser.

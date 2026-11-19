@@ -14,5 +14,11 @@ namespace NewsAggregator.Models
 
         /// <summary>Article body split into plain-text paragraphs.</summary>
         public IReadOnlyList<string> Paragraphs { get; set; } = Array.Empty<string>();
+
+        /// <summary>
+        /// True when the source hides this note behind a registration wall and no
+        /// alternate copy (such as its public RSS feed) could be found.
+        /// </summary>
+        public bool RequiresAccount { get; set; }
     }
 }
