@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import './App.css';
 import { ListeningControls } from './speech/ListeningControls';
 import { useArticlePlayback } from './speech/useArticlePlayback';
@@ -108,6 +108,58 @@ function readNoteSizeIndex(): number {
 }
 
 const initialNoteSizeIndex = readNoteSizeIndex();
+
+interface AppRoute {
+  storyId: string | null;
+  sourceUrl: string | null;
+  day: string | null;
+}
+
+interface RouteHistoryState {
+  route: AppRoute;
+  depth: number;
+}
+
+const HISTORY_STATE_KEY = 'noticias-route';
+const ROUTE_KEYS = {
+  day: 'dia',
+  story: 'nota',
+  source: 'fuente',
+} as const;
+
+function readRouteFromLocation(): AppRoute {
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const day = params.get(ROUTE_KEYS.day);
+
+  return {
+    storyId: params.get(ROUTE_KEYS.story) || null,
+    sourceUrl: params.get(ROUTE_KEYS.source) || null,
+    day: day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null,
+  };
+}
+
+function routeToUrl(route: AppRoute): string {
+  const params = new URLSearchParams();
+  if (route.day) {
+    params.set(ROUTE_KEYS.day, route.day);
+  }
+  if (route.storyId) {
+    params.set(ROUTE_KEYS.story, route.storyId);
+  }
+  if (route.sourceUrl) {
+    params.set(ROUTE_KEYS.source, route.sourceUrl);
+  }
+
+  const query = params.toString();
+  const { pathname, search } = window.location;
+  return `${pathname}${search}${query ? `#${query}` : ''}`;
+}
+
+function readHistoryState(): RouteHistoryState | null {
+  const state = window.history.state as Record<string, unknown> | null;
+  const entry = state?.[HISTORY_STATE_KEY] as RouteHistoryState | undefined;
+  return entry && typeof entry.depth === 'number' ? entry : null;
+}
 
 const fullDateFormatter = new Intl.DateTimeFormat('es-AR', {
   weekday: 'long',
@@ -263,20 +315,28 @@ function visibleAuthor(author: string | null | undefined, sourceName: string) {
 }
 
 function App() {
+  const [initialRoute] = useState<AppRoute>(readRouteFromLocation);
+
   const [edition, setEdition] = useState<StoriesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
 
-  const [openStoryId, setOpenStoryId] = useState<string | null>(null);
-  const [openSourceUrl, setOpenSourceUrl] = useState<string | null>(null);
+  const [openStoryId, setOpenStoryId] = useState<string | null>(
+    initialRoute.storyId,
+  );
+  const [openSourceUrl, setOpenSourceUrl] = useState<string | null>(
+    initialRoute.sourceUrl,
+  );
   const [contents, setContents] = useState<Record<string, ContentState>>({});
 
   const [historyEditions, setHistoryEditions] = useState<
     Record<string, StoriesResponse>
   >({});
-  const [historyDate, setHistoryDate] = useState<string | null>(null);
+  const [historyDate, setHistoryDate] = useState<string | null>(
+    initialRoute.day,
+  );
   const [historyStatus, setHistoryStatus] = useState<
     'idle' | 'loading' | 'error'
   >('idle');
@@ -301,6 +361,66 @@ function App() {
   const moreCompareRef = useRef<HTMLButtonElement | null>(null);
   const moreStoriesRef = useRef<HTMLButtonElement | null>(null);
   const pendingScrollRef = useRef<number | null>(null);
+  const readerOpenRef = useRef(initialRoute.storyId !== null);
+
+  const applyRoute = useCallback((route: AppRoute) => {
+    if (route.storyId === null && readerOpenRef.current) {
+      pendingScrollRef.current = openScrollRef.current;
+    }
+    readerOpenRef.current = route.storyId !== null;
+
+    setOpenStoryId(route.storyId);
+    setOpenSourceUrl(route.sourceUrl);
+    setHistoryDate(route.day);
+    setHistoryVisible(HISTORY_PAGE_SIZE);
+  }, []);
+
+  const pushRoute = (route: AppRoute) => {
+    const depth = (readHistoryState()?.depth ?? 0) + 1;
+    window.history.pushState(
+      { [HISTORY_STATE_KEY]: { route, depth } },
+      '',
+      routeToUrl(route),
+    );
+    applyRoute(route);
+  };
+
+  const replaceRoute = (route: AppRoute) => {
+    const depth = readHistoryState()?.depth ?? 0;
+    window.history.replaceState(
+      { [HISTORY_STATE_KEY]: { route, depth } },
+      '',
+      routeToUrl(route),
+    );
+    applyRoute(route);
+  };
+
+  // The entry the user landed on becomes the base of the in-app history, so
+  // every push/pop has a known depth and a deep link never sends Back outside
+  // the application by accident.
+  useEffect(() => {
+    const existing = readHistoryState();
+    window.history.replaceState(
+      {
+        [HISTORY_STATE_KEY]: {
+          route: initialRoute,
+          depth: existing?.depth ?? 0,
+        },
+      },
+      '',
+      routeToUrl(initialRoute),
+    );
+
+    const handlePopState = (event: PopStateEvent) => {
+      const state = (
+        event.state as Record<string, unknown> | null
+      )?.[HISTORY_STATE_KEY] as RouteHistoryState | undefined;
+      applyRoute(state?.route ?? readRouteFromLocation());
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [applyRoute, initialRoute]);
 
   useEffect(() => {
     mounted.current = true;
@@ -453,8 +573,7 @@ function App() {
     }
   };
 
-  const loadHistoryDay = async (date: string) => {
-    setHistoryDate(date);
+  const loadHistoryDay = useCallback(async (date: string) => {
     setHistoryVisible(HISTORY_PAGE_SIZE);
 
     if (historyEditions[date]) {
@@ -486,7 +605,7 @@ function App() {
         setHistoryStatus('error');
       }
     }
-  };
+  }, [historyEditions]);
 
   const loadContent = async (url: string) => {
     if (requestedContents.current.has(url)) {
@@ -530,6 +649,23 @@ function App() {
       }
     }
   };
+
+  // The URL is the source of truth for what is open. These effects load the
+  // missing data after a click, a deep link or a browser Back/Forward.
+  useEffect(() => {
+    if (openSourceUrl) {
+      // oxlint-disable-next-line react/set-state-in-effect -- the reader shows a loading state while the note is fetched
+      void loadContent(openSourceUrl);
+    }
+  }, [openSourceUrl]);
+
+  useEffect(() => {
+    if (!historyDate) {
+      return;
+    }
+    // oxlint-disable-next-line react/set-state-in-effect -- the day shows a loading state while the edition is fetched
+    void loadHistoryDay(historyDate);
+  }, [historyDate, loadHistoryDay]);
 
   const stories = edition?.stories ?? [];
   const previousDays = edition?.previousDays ?? [];
@@ -603,9 +739,21 @@ function App() {
     openerRef.current = opener;
     openScrollRef.current = window.scrollY;
     const first = story.sources[0];
-    setOpenStoryId(story.id);
-    setOpenSourceUrl(first.originalUrl);
-    void loadContent(first.originalUrl);
+    const route = {
+      storyId: story.id,
+      sourceUrl: first.originalUrl,
+      day: historyDate,
+    };
+
+    // There is a single reader on screen: changing notes replaces the current
+    // entry instead of stacking entries, so Back always closes the reader and
+    // returns to the list/day the user was browsing.
+    if (openStoryId !== null) {
+      replaceRoute(route);
+    } else {
+      pushRoute(route);
+    }
+
     window.requestAnimationFrame(() => {
       readerRef.current?.scrollIntoView({ block: 'start' });
       readerRef.current?.focus({ preventScroll: true });
@@ -613,9 +761,26 @@ function App() {
   };
 
   const closeStory = () => {
-    pendingScrollRef.current = openScrollRef.current;
-    setOpenStoryId(null);
-    setOpenSourceUrl(null);
+    const state = readHistoryState();
+    const route = {
+      ...(state?.route ?? {
+        storyId: openStoryId,
+        sourceUrl: openSourceUrl,
+        day: historyDate,
+      }),
+      storyId: null,
+      sourceUrl: null,
+    };
+
+    // Let the browser pop our entry so Back/Forward stay coherent. A deep
+    // link has nothing of ours behind it, so replace it with the base view
+    // instead of leaving the application.
+    if (state && state.depth > 0) {
+      window.history.back();
+      return;
+    }
+
+    replaceRoute(route);
   };
 
   // The reader is removed before the browser can clamp the restored offset,
@@ -655,8 +820,11 @@ function App() {
   });
 
   const selectSource = (url: string) => {
-    setOpenSourceUrl(url);
-    void loadContent(url);
+    replaceRoute({
+      storyId: openStoryId,
+      sourceUrl: url,
+      day: historyDate,
+    });
   };
 
   const openStoryData = openStoryId
@@ -1362,7 +1530,16 @@ function App() {
                       type="button"
                       className="history__day"
                       aria-pressed={historyDate === day.date}
-                      onClick={() => void loadHistoryDay(day.date)}
+                      onClick={() => {
+                        if (historyDate === day.date) {
+                          return;
+                        }
+                        pushRoute({
+                          storyId: null,
+                          sourceUrl: null,
+                          day: day.date,
+                        });
+                      }}
                     >
                       {historyDayLabel(day.date, edition?.date)}
                     </button>

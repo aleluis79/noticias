@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 
@@ -167,6 +167,11 @@ describe('App summary integration', () => {
     await screen.findByText(summaryText)
 
     fireEvent.click(screen.getByRole('button', { name: /Volver a la portada/ }))
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('button', { name: /Volver a la portada/ }),
+      ).toBeNull()
+    })
     fireEvent.click(
       screen.getByRole('button', { name: 'Una historia del día' }),
     )

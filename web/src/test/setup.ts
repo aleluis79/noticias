@@ -4,6 +4,9 @@ import { afterEach, vi } from 'vitest'
 afterEach(() => {
   cleanup()
   window.localStorage.clear()
+  // The app mirrors the open note and day in the URL, so each test must start
+  // from the base route instead of inheriting the previous one.
+  window.history.replaceState(null, '', '/')
 })
 
 const noop = () => {}

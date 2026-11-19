@@ -213,4 +213,88 @@ describe('edition history', () => {
 
     expect(screen.getByText('Una historia de hoy')).toBeTruthy()
   })
+
+  it('closes the note when the browser goes back', async () => {
+    render(<App />)
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Una historia de hoy' }),
+    )
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', {
+          name: 'Una historia de hoy',
+          level: 2,
+        }),
+      ).toBeTruthy()
+    })
+    expect(window.location.hash).toContain('nota=today-1')
+
+    window.history.back()
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('button', { name: /Volver a la portada/ }),
+      ).toBeNull()
+    })
+    expect(window.location.hash).toBe('')
+  })
+
+  it('returns to today when the browser goes back from a previous day', async () => {
+    render(<App />)
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Ayer · 16 de noviembre/ }),
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('Una historia de ayer de Clarín')).toBeTruthy()
+    })
+    expect(window.location.hash).toContain('dia=2026-11-16')
+
+    window.history.back()
+
+    await waitFor(() => {
+      expect(screen.queryByText('Una historia de ayer de Clarín')).toBeNull()
+    })
+    expect(window.location.hash).toBe('')
+  })
+
+  it('reopens the note when the browser goes forward again', async () => {
+    render(<App />)
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Una historia de hoy' }),
+    )
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', {
+          name: 'Una historia de hoy',
+          level: 2,
+        }),
+      ).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Volver a la portada/ }))
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('button', { name: /Volver a la portada/ }),
+      ).toBeNull()
+    })
+
+    window.history.forward()
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', {
+          name: 'Una historia de hoy',
+          level: 2,
+        }),
+      ).toBeTruthy()
+    })
+    expect(window.location.hash).toContain('nota=today-1')
+  })
 })

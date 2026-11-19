@@ -141,6 +141,14 @@ describe('App speech integration', () => {
     const cancelsBefore = speech?.fake.cancelCalls ?? 0
     fireEvent.click(screen.getByRole('button', { name: /Volver a la portada/ }))
 
+    // The in-app close goes through history.back(), which dispatches popstate
+    // asynchronously in the browser.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('button', { name: /Volver a la portada/ }),
+      ).toBeNull()
+    })
+
     expect(speech?.fake.cancelCalls ?? 0).toBeGreaterThan(cancelsBefore)
   })
 
