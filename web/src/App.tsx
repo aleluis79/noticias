@@ -67,6 +67,7 @@ const COMPARE_PAGE = 12;
 const BREVES = 6;
 const PAGE_SIZE = 18;
 const HISTORY_PAGE_SIZE = 12;
+const BACK_TO_TOP_THRESHOLD = 640;
 
 function parseThemePreference(value: string | null): ThemePreference {
   return value === 'light' || value === 'dark' ? value : 'auto';
@@ -351,11 +352,13 @@ function App() {
     useState<ThemePreference>(initialThemePreference);
   const [noteSizeIndex, setNoteSizeIndex] =
     useState<number>(initialNoteSizeIndex);
+  const [showBackToTop, setShowBackToTop] = useState(false);
 
   const requestedContents = useRef(new Set<string>());
   const historyRequest = useRef(0);
   const mounted = useRef(true);
   const readerRef = useRef<HTMLElement | null>(null);
+  const mastheadTitleRef = useRef<HTMLHeadingElement | null>(null);
   const openerRef = useRef<HTMLButtonElement | null>(null);
   const openScrollRef = useRef(0);
   const moreCompareRef = useRef<HTMLButtonElement | null>(null);
@@ -525,6 +528,27 @@ function App() {
     window.addEventListener('storage', handleStorage);
     return () => window.removeEventListener('storage', handleStorage);
   }, []);
+
+  useEffect(() => {
+    const updateVisibility = () =>
+      setShowBackToTop(window.scrollY > BACK_TO_TOP_THRESHOLD);
+
+    updateVisibility();
+    window.addEventListener('scroll', updateVisibility, { passive: true });
+    return () => window.removeEventListener('scroll', updateVisibility);
+  }, []);
+
+  const scrollToTop = () => {
+    const reduceMotion = window.matchMedia(
+      '(prefers-reduced-motion: reduce)',
+    ).matches;
+
+    window.scrollTo({
+      top: 0,
+      behavior: reduceMotion ? 'auto' : 'smooth',
+    });
+    mastheadTitleRef.current?.focus({ preventScroll: true });
+  };
 
   const loadEdition = async (refresh: boolean) => {
     if (refresh) {
@@ -890,7 +914,13 @@ function App() {
 
       <header className="masthead">
         <div className="masthead__top">
-          <h1 className="masthead__title">Noticias Argentinas</h1>
+          <h1
+            className="masthead__title"
+            ref={mastheadTitleRef}
+            tabIndex={-1}
+          >
+            Noticias Argentinas
+          </h1>
           <p className="masthead__meta">
             <span className="masthead__date">{todayLabel}</span>
             <span className="masthead__date-short">{shortDateLabel}</span>
@@ -1629,6 +1659,31 @@ function App() {
         <footer className="site-footer">
           Fuentes: {sources.join(' · ')}
         </footer>
+      )}
+
+      {showBackToTop && (
+        <button
+          type="button"
+          className="back-to-top"
+          onClick={scrollToTop}
+          aria-label="Volver al inicio de la página"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M12 19V5" />
+            <path d="m5 12 7-7 7 7" />
+          </svg>
+          <span className="back-to-top__label">Arriba</span>
+        </button>
       )}
     </div>
   );
