@@ -6,11 +6,12 @@ API_PROJECT ?= api/api.csproj
 API_URL ?= http://localhost:5251
 WEB_DIR ?= web
 WEB_URL ?= http://localhost:5173
+OLLAMA_MODEL ?= gemma4:e2b
 RUN_DIR ?= $(CURDIR)/.run
 PID_FILE ?= $(RUN_DIR)/app.pid
 LOG_FILE ?= $(RUN_DIR)/app.log
 
-.PHONY: help install install-browser install-tts dev api web start stop restart status logs test test-api test-web lint build build-api build-web check clean docker-build docker-up docker-down docker-logs
+.PHONY: help install install-browser install-tts ollama-pull docker-model dev api web start stop restart status logs test test-api test-web lint build build-api build-web check clean docker-build docker-up docker-down docker-logs
 
 help: ## Muestra esta ayuda
 	@awk 'BEGIN {FS = ":.*## "; printf "\nUso:\n  make <objetivo>\n\nObjetivos:\n"} /^[a-zA-Z_-]+:.*?## / { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -22,6 +23,12 @@ install: ## Instala las dependencias de la API y del frontend
 
 install-tts: ## Descarga Piper y la voz es_AR para el TTS local
 	./tools/install-tts.sh
+
+ollama-pull: ## Descarga el modelo de resumen en un Ollama local
+	ollama pull $(OLLAMA_MODEL)
+
+docker-model: ## Descarga el modelo de resumen en el contenedor de Ollama
+	docker compose exec ollama ollama pull $(OLLAMA_MODEL)
 
 install-browser: ## Instala Chromium para el fallback de Playwright
 	$(DOTNET) build $(API_PROJECT) --nologo

@@ -1,5 +1,8 @@
 name: noticias
 
+# Keep the model used by the API and the pull service in sync.
+x-ollama-model: &ollama-model gemma4:e2b
+
 services:
   api:
     build:
@@ -10,11 +13,18 @@ services:
       ASPNETCORE_URLS: http://+:8080
       ASPNETCORE_ENVIRONMENT: Production
       Archive__Directory: /var/lib/noticias-archive
+      Summaries__OllamaUrl: http://ollama:11434
+      Summaries__Model: *ollama-model
+      Summaries__Directory: /var/lib/noticias-summaries
     ports:
       - "5251:8080"
     volumes:
       - noticias-tts:/var/cache/noticias-tts
       - noticias-archive:/var/lib/noticias-archive
+      - noticias-summaries:/var/lib/noticias-summaries
+    depends_on:
+      ollama:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
@@ -22,6 +32,32 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  # Local model used for the on-demand article summaries. The model itself is
+  # pulled by the one-shot service below and kept in a volume.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: noticias-ollama
+    volumes:
+      - noticias-ollama:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: noticias-ollama-pull
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull", *ollama-model]
+    restart: "no"
 
   web:
     build:
@@ -47,3 +83,5 @@ services:
 volumes:
   noticias-tts:
   noticias-archive:
+  noticias-summaries:
+  noticias-ollama:

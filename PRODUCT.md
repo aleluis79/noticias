@@ -35,8 +35,9 @@ La app no solo agrega titulares: extrae y limpia el cuerpo del artículo origina
 - La nota completa se puede escuchar con pausa y velocidad. Chrome, Safari y el resto usan la voz del navegador (`speechSynthesis`), con elección de voz en español; Firefox usa una voz neuronal local generada por la API con Piper (`es_AR-daniela-high`).
 - En Firefox el texto de la nota viaja al servidor del proyecto, donde se sintetiza y se cachea; no se envía a servicios de terceros. En el resto de los navegadores no sale del dispositivo.
 - La reproducción se detiene al cerrar la nota o cambiar de medio; no sigue con la pantalla bloqueada. Si la voz local falla, Firefox vuelve solo a la voz del navegador. La calidad de la voz del navegador depende de las voces instaladas en cada dispositivo.
+- La nota se puede resumir a pedido con un modelo local (`gemma4:e2b` en Ollama). El resumen se guarda en disco y, una vez generado, se muestra directamente; no se vuelve a generar. Sin Ollama o sin el modelo, la función avisa que no está disponible y la nota sigue siendo legible.
 - El autor se muestra solo cuando firma una persona; se omite si coincide con el nombre del medio o es una firma genérica.
-- La lectura no reemplaza al medio: siempre se ofrece "Abrir en <medio>", se atribuye medio y autor, y no se reescribe ni se resume con IA. _(Confirmado en entrevista.)_
+- La lectura no reemplaza al medio: siempre se ofrece "Abrir en <medio>", se atribuye medio y autor, y el resumen con IA es opcional, se identifica como generado automáticamente y no reemplaza el cuerpo original.
 - Los filtros combinan medio y texto del título; no hay búsqueda sobre el cuerpo ni historial de lectura.
 - No se inventan notas, autores, métricas de uso ni testimonios.
 - No se estableció un estándar de accesibilidad ni requisitos específicos; hoy existen control de tamaño de lectura y tema automático.
@@ -56,7 +57,7 @@ La app no solo agrega titulares: extrae y limpia el cuerpo del artículo origina
 ## Product Principles
 
 - **La nota se lee acá:** cada decisión protege la lectura completa dentro de la app.
-- **El medio manda:** atribución visible, enlace al original y cero reescritura del contenido.
+- **El medio manda:** atribución visible, enlace al original y cero reescritura del contenido; el resumen con IA es explícito y opcional.
 - **Ponerse al día rápido:** escanear, filtrar y abrir una nota con el menor número de pasos.
 - **Sin fricción ni cuentas:** preferencias locales; nada que registrar para leer.
 - **Honestidad sobre el scraping:** si un medio falla o cambia, se dice y se ofrece el original.

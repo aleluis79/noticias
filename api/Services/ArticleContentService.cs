@@ -168,6 +168,7 @@ namespace NewsAggregator.Services
                 : new ArticleContent
                 {
                     Url = cacheKey,
+                    Title = html is null ? string.Empty : ExtractTitle(html) ?? string.Empty,
                     Author = html is null ? string.Empty : ExtractAuthor(html) ?? string.Empty,
                     Paragraphs = paragraphs
                 };
@@ -200,6 +201,42 @@ namespace NewsAggregator.Services
             return ExtractJsonLdAuthor(document)
                    ?? ExtractMetaAuthor(document)
                    ?? ExtractBylineAuthor(document);
+        }
+
+        /// <summary>
+        /// Extracts the page title from structured metadata or the visible heading.
+        /// Returns null when the page does not publish a usable title. Visible for tests.
+        /// </summary>
+        internal static string? ExtractTitle(string html)
+        {
+            if (string.IsNullOrWhiteSpace(html))
+            {
+                return null;
+            }
+
+            var document = new HtmlParser().ParseDocument(html);
+
+            foreach (var selector in new[]
+                     {
+                         "meta[property='og:title']",
+                         "meta[name='twitter:title']"
+                     })
+            {
+                var value = CleanTitle(document.QuerySelector(selector)?.GetAttribute("content"));
+                if (value is not null)
+                {
+                    return value;
+                }
+            }
+
+            return CleanTitle(document.QuerySelector("h1")?.TextContent)
+                   ?? CleanTitle(document.Title);
+        }
+
+        private static string? CleanTitle(string? value)
+        {
+            var cleaned = Clean(value);
+            return cleaned is { Length: >= 3 and <= 300 } ? cleaned : null;
         }
 
         private static string? ExtractJsonLdAuthor(IDocument document)

@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import './App.css';
 import { ListeningControls } from './speech/ListeningControls';
 import { useArticlePlayback } from './speech/useArticlePlayback';
+import { SummaryPanel } from './summary/SummaryPanel';
+import { useArticleSummary } from './summary/useArticleSummary';
 
 // Shapes returned by GET /api/stories (api/Models/NewsStory.cs)
 interface StorySource {
@@ -705,6 +707,11 @@ function App() {
     endpoint: `${API_BASE}/api/news/audio`,
   });
 
+  const summary = useArticleSummary(
+    openSource?.originalUrl ?? null,
+    `${API_BASE}/api/news/summary`,
+  );
+
   const editionLabel = editionTime(edition?.generatedAt);
 
   return (
@@ -961,6 +968,8 @@ function App() {
                     onVoiceChange={speech.setVoiceURI}
                   />
                 )}
+
+                <SummaryPanel state={summary.state} onGenerate={summary.generate} />
 
                 {(!openContent || openContent.status === 'loading') && (
                   <p className="reader__status" role="status">

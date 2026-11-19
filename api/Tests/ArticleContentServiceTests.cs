@@ -190,4 +190,62 @@ public class ArticleContentServiceTests
 
         Assert.Empty(paragraphs);
     }
+
+    [Fact]
+    public void ExtractTitle_ShouldPreferTheOpenGraphTitle()
+    {
+        const string html = """
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+                <title>Título del sitio | Sección</title>
+                <meta property="og:title" content="El título real de la nota">
+            </head>
+            <body>
+                <h1>Un encabezado visible distinto</h1>
+            </body>
+            </html>
+            """;
+
+        var title = ArticleContentService.ExtractTitle(html);
+
+        Assert.Equal("El título real de la nota", title);
+    }
+
+    [Fact]
+    public void ExtractTitle_ShouldFallBackToTheVisibleHeading()
+    {
+        const string html = """
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+                <title>Título del sitio</title>
+            </head>
+            <body>
+                <h1>Un encabezado visible</h1>
+            </body>
+            </html>
+            """;
+
+        var title = ArticleContentService.ExtractTitle(html);
+
+        Assert.Equal("Un encabezado visible", title);
+    }
+
+    [Fact]
+    public void ExtractTitle_ShouldReturnNullWhenThereIsNoTitle()
+    {
+        const string html = """
+            <!DOCTYPE html>
+            <html lang="es">
+            <body>
+                <article><p>Una nota sin título.</p></article>
+            </body>
+            </html>
+            """;
+
+        var title = ArticleContentService.ExtractTitle(html);
+
+        Assert.Null(title);
+    }
 }
