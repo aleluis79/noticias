@@ -16,6 +16,12 @@ namespace NewsAggregator.Models
         public IReadOnlyList<string> Paragraphs { get; set; } = Array.Empty<string>();
 
         /// <summary>
+        /// Images and videos found in the article body, with their position
+        /// relative to <see cref="Paragraphs"/>. Empty when the note has none.
+        /// </summary>
+        public IReadOnlyList<ArticleMedia> Media { get; set; } = Array.Empty<ArticleMedia>();
+
+        /// <summary>
         /// True when the source hides this note behind a registration wall and no
         /// alternate copy (such as its public RSS feed) could be found.
         /// </summary>

@@ -37,6 +37,7 @@ La app no solo agrega titulares: extrae y limpia el cuerpo del artículo origina
 - La reproducción se detiene al cerrar la nota o cambiar de medio; no sigue con la pantalla bloqueada. Si la voz local falla, Firefox vuelve solo a la voz del navegador. La calidad de la voz del navegador depende de las voces instaladas en cada dispositivo.
 - La nota se puede resumir a pedido con un modelo local (`gemma4:e2b` en Ollama). El resumen se guarda en disco y, una vez generado, se muestra directamente; no se vuelve a generar. Sin Ollama o sin el modelo, la función avisa que no está disponible y la nota sigue siendo legible.
 - El autor se muestra solo cuando firma una persona; se omite si coincide con el nombre del medio o es una firma genérica.
+- Las imágenes y videos de la nota son opcionales: el lector los muestra solo si activa "Ver imágenes y videos" y recuerda esa elección en el dispositivo. Con la opción apagada no se descarga ningún medio. Las imágenes se piden directo al CDN del medio sin `Referer`; YouTube y Vimeo se abren en el proveedor, sin iframes ni contenido de terceros embebido.
 - La lectura no reemplaza al medio: siempre se ofrece "Abrir en <medio>", se atribuye medio y autor, y el resumen con IA es opcional, se identifica como generado automáticamente y no reemplaza el cuerpo original.
 - Los filtros combinan medio y texto del título; no hay búsqueda sobre el cuerpo ni historial de lectura.
 - No se inventan notas, autores, métricas de uso ni testimonios.

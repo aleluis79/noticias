@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import './App.css';
+import { ArticleMediaBlock } from './media/ArticleMediaBlock';
+import {
+  buildReaderBlocks,
+  readShowMediaPreference,
+  writeShowMediaPreference,
+  type ArticleMedia,
+} from './media/mediaModel';
 import { ListeningControls } from './speech/ListeningControls';
 import { useArticlePlayback } from './speech/useArticlePlayback';
 import { SummaryPanel } from './summary/SummaryPanel';
@@ -47,6 +54,7 @@ interface ArticleContent {
   title: string;
   author?: string;
   paragraphs: string[];
+  media?: ArticleMedia[];
   requiresAccount?: boolean;
 }
 
@@ -54,7 +62,12 @@ type ContentState =
   | { status: 'loading' }
   | { status: 'error' }
   | { status: 'gated' }
-  | { status: 'ready'; paragraphs: string[]; author: string | null };
+  | {
+      status: 'ready';
+      paragraphs: string[];
+      media: ArticleMedia[];
+      author: string | null;
+    };
 
 // Empty in Docker builds so requests go through the nginx reverse proxy.
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:5251';
@@ -317,6 +330,22 @@ function visibleAuthor(author: string | null | undefined, sourceName: string) {
   return author;
 }
 
+function formatMediaSummary(media: ArticleMedia[]): string {
+  const imageCount = media.filter((item) => item.type === 'image').length;
+  const videoCount = media.length - imageCount;
+  const parts: string[] = [];
+
+  if (imageCount > 0) {
+    parts.push(`${imageCount} ${imageCount === 1 ? 'imagen' : 'imágenes'}`);
+  }
+
+  if (videoCount > 0) {
+    parts.push(`${videoCount} ${videoCount === 1 ? 'video' : 'videos'}`);
+  }
+
+  return parts.join(' y ');
+}
+
 function App() {
   const [initialRoute] = useState<AppRoute>(readRouteFromLocation);
 
@@ -354,6 +383,7 @@ function App() {
     useState<ThemePreference>(initialThemePreference);
   const [noteSizeIndex, setNoteSizeIndex] =
     useState<number>(initialNoteSizeIndex);
+  const [showMedia, setShowMedia] = useState<boolean>(readShowMediaPreference);
   const [showBackToTop, setShowBackToTop] = useState(false);
 
   const requestedContents = useRef(new Set<string>());
@@ -651,6 +681,7 @@ function App() {
 
       const data: ArticleContent = await response.json();
       const paragraphs = data.paragraphs ?? [];
+      const media = data.media ?? [];
       const author = data.author?.trim() || null;
 
       if (!mounted.current) {
@@ -674,7 +705,7 @@ function App() {
 
       setContents((previous) => ({
         ...previous,
-        [url]: { status: 'ready', paragraphs, author },
+        [url]: { status: 'ready', paragraphs, media, author },
       }));
     } catch (e) {
       console.error('Failed to load the article body:', e);
@@ -898,6 +929,23 @@ function App() {
     openContent?.status === 'ready'
       ? visibleAuthor(openContent.author, openSource?.sourceName ?? '')
       : null;
+  const openMedia =
+    openContent?.status === 'ready' ? openContent.media : [];
+  const openBlocks =
+    openContent?.status === 'ready'
+      ? buildReaderBlocks(
+          openContent.paragraphs,
+          showMedia ? openContent.media : [],
+        )
+      : [];
+
+  const toggleMedia = () => {
+    setShowMedia((current) => {
+      const next = !current;
+      writeShowMediaPreference(next);
+      return next;
+    });
+  };
 
   const speech = useArticlePlayback({
     articleKey: openSource?.originalUrl ?? null,
@@ -1163,6 +1211,21 @@ function App() {
                   </div>
                 </div>
 
+                {openContent?.status === 'ready' && openMedia.length > 0 && (
+                  <div className="reader__media-control">
+                    <button
+                      type="button"
+                      className="reader__media-toggle"
+                      aria-pressed={showMedia}
+                      onClick={toggleMedia}
+                    >
+                      {showMedia
+                        ? 'Ocultar imágenes y videos'
+                        : `Ver ${formatMediaSummary(openMedia)}`}
+                    </button>
+                  </div>
+                )}
+
                 {speech.supported && openContent?.status === 'ready' && (
                   <ListeningControls
                     status={speech.status}
@@ -1210,9 +1273,16 @@ function App() {
 
                 {openContent?.status === 'ready' && (
                   <div className="reader__content">
-                    {openContent.paragraphs.map((paragraph, index) => (
-                      <p key={index}>{paragraph}</p>
-                    ))}
+                    {openBlocks.map((block, index) =>
+                      block.kind === 'paragraph' ? (
+                        <p key={`paragraph-${index}`}>{block.text}</p>
+                      ) : (
+                        <ArticleMediaBlock
+                          key={`media-${index}-${block.media.url}`}
+                          media={block.media}
+                        />
+                      ),
+                    )}
                   </div>
                 )}
 

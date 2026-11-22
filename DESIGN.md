@@ -255,6 +255,9 @@ Grupo segmentado en píldora con borde Filete Reforzado: botón "A−", valor po
 ### Article Body
 El cuerpo extraído se compone en serif a `calc(1.06rem × --note-scale)`, interlineado 1.7, párrafos separados por 1.05em, 68ch de medida y `overflow-wrap: break-word`. Antes del cuerpo, el autor se muestra en 0.84rem/600 con la etiqueta "Por" en versalitas rojas; solo aparece cuando firma una persona. Al pie, el enlace "Abrir en <medio>" cierra el panel como píldora con ícono externo de 14px.
 
+### Article Media
+Las imágenes y videos son opcionales. El lector ofrece una píldora fantasma ("Ver 4 imágenes y 1 video") debajo de los controles de lectura y no renderiza ningún medio hasta que se activa; la elección se recuerda en el dispositivo. Con la opción activa, las imágenes se intercalan después del párrafo que les corresponde, con `figure` y `figcaption`, radio de 16px, ancho de 68ch y sin sombra. El pie usa sans a 0.78rem en Tinta Sepia; si la imagen no carga, se oculta y el pie sigue visible. Los videos nativos usan controles, `preload="none"` y un póster, sin autoplay. YouTube y Vimeo se muestran como una tarjeta rectangular de 16px con filete y un enlace "Ver video en YouTube/Vimeo"; no se insertan iframes ni se carga contenido de terceros.
+
 ### Summary Panel
 El resumen ocupa el mismo ancho de lectura (68ch) y vive entre los controles de voz y el autor. Es un rectángulo de 16px sobre Papel Sombreado, con filete de 1px, sin sombra. La etiqueta "Resumen · IA" va en versalitas rojas; el texto, en serif a `calc(1.02rem × --note-scale)` con interlineado 1.6. Una nota en Tinta Sepia aclara que se generó automáticamente y puede contener errores.
 

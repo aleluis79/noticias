@@ -28,8 +28,34 @@ namespace NewsAggregator.Services
         private const int MaxParagraphs = 200;
         private const int MaxCharacters = 30000;
         private const int MaxFeedPages = 6;
+        private const int MaxMediaItems = 12;
+        private const int MinMediaDimension = 200;
+        private const int MaxCaptionLength = 500;
 
         private const string SeulHost = "seul.ar";
+
+        /// <summary>Attributes that news sites use to defer or lazy-load an image.</summary>
+        private static readonly string[] ImageSourceAttributes =
+        {
+            "src", "data-src", "data-lazy-src", "data-original", "data-url"
+        };
+
+        private static readonly string[] ImageSourceSetAttributes =
+        {
+            "srcset", "data-srcset", "data-lazy-srcset"
+        };
+
+        /// <summary>
+        /// Fragments that identify logos, tracking pixels, placeholders and other
+        /// page chrome that must never be presented as article media.
+        /// </summary>
+        private static readonly string[] MediaUrlNoiseTokens =
+        {
+            "logo", "sprite", "placeholder", "fallback", "sharing",
+            "avatar", "emoji", "pixel", "spacer", "1x1", "banner", "publicidad",
+            "newsletter", "tracking", "analytics", "scorecardresearch", "doubleclick",
+            "facebook.com/tr", "google-analytics", "googletagmanager"
+        };
 
         /// <summary>
         /// WordPress appends the post title to the RSS body. It is not part of the note.
@@ -195,12 +221,17 @@ namespace NewsAggregator.Services
             cancellationToken.ThrowIfCancellationRequested();
 
             var walled = IsSeulRegistrationWall(html);
-            var paragraphs = html is null
-                ? Array.Empty<string>()
-                : walled
-                    ? await TryGetSeulFeedParagraphsAsync(cacheKey, html, cancellationToken)
-                        .ConfigureAwait(false)
-                    : ExtractParagraphs(html);
+            var body = html is null || walled
+                ? null
+                : ExtractBody(html, cacheKey);
+
+            var paragraphs = body?.Paragraphs
+                ?? (html is null
+                    ? Array.Empty<string>()
+                    : walled
+                        ? await TryGetSeulFeedParagraphsAsync(cacheKey, html, cancellationToken)
+                            .ConfigureAwait(false)
+                        : Array.Empty<string>());
 
             var content = html is null || (paragraphs.Count == 0 && !walled)
                 ? null
@@ -210,6 +241,7 @@ namespace NewsAggregator.Services
                     Title = ExtractTitle(html!) ?? string.Empty,
                     Author = ExtractAuthor(html!) ?? string.Empty,
                     Paragraphs = paragraphs,
+                    Media = body?.Media ?? Array.Empty<ArticleMedia>(),
                     RequiresAccount = walled && paragraphs.Count == 0
                 };
 
@@ -814,49 +846,101 @@ namespace NewsAggregator.Services
                 .ToLowerInvariant();
 
         /// <summary>
-        /// Extracts the article body from a full page. Visible for tests.
+        /// Extracts the article body and its optional media from a full page.
+        /// Visible for tests.
         /// </summary>
-        internal static IReadOnlyList<string> ExtractParagraphs(string html)
+        internal static ExtractedBody ExtractBody(string html, string? articleUrl)
         {
             if (string.IsNullOrWhiteSpace(html))
             {
-                return Array.Empty<string>();
+                return new ExtractedBody(
+                    Array.Empty<string>(),
+                    Array.Empty<ArticleMedia>());
             }
 
             var document = new HtmlParser().ParseDocument(html);
 
             // Read structured data before RemoveNoise() drops every <script> tag.
             var jsonLdParagraphs = ExtractJsonLdParagraphs(document);
-            RemoveNoise(document);
+            var structuredMedia = articleUrl is null
+                ? Array.Empty<ArticleMedia>()
+                : ExtractStructuredMedia(document, articleUrl);
 
-            var bodyParagraphs = BestParagraphs(document, BodySelectors);
+            RemoveNoise(document, articleUrl);
+
+            var (bodyContainer, bodyParagraphs) = BestParagraphs(document, BodySelectors);
             if (IsBodyEnough(bodyParagraphs))
             {
-                return Limit(bodyParagraphs);
+                return BuildBody(bodyContainer, bodyParagraphs, articleUrl, structuredMedia);
             }
 
             if (IsBodyEnough(jsonLdParagraphs))
             {
-                return Limit(jsonLdParagraphs);
+                return new ExtractedBody(Limit(jsonLdParagraphs), structuredMedia);
             }
 
-            var articleParagraphs = BestParagraphs(document, new[] { "article" });
+            var (articleContainer, articleParagraphs) = BestParagraphs(document, new[] { "article" });
             if (IsBodyEnough(articleParagraphs))
             {
-                return Limit(articleParagraphs);
+                return BuildBody(articleContainer, articleParagraphs, articleUrl, structuredMedia);
             }
 
-            var mainParagraphs = BestParagraphs(document, new[] { "main" });
+            var (mainContainer, mainParagraphs) = BestParagraphs(document, new[] { "main" });
             if (IsBodyEnough(mainParagraphs))
             {
-                return Limit(mainParagraphs);
+                return BuildBody(mainContainer, mainParagraphs, articleUrl, structuredMedia);
             }
 
-            return Limit(CollectParagraphs(document.Body ?? document.DocumentElement));
+            var fallback = document.Body ?? document.DocumentElement;
+            return BuildBody(fallback, CollectParagraphs(fallback), articleUrl, structuredMedia);
         }
 
-        private static List<string> BestParagraphs(IDocument document, IEnumerable<string> selectors)
+        /// <summary>
+        /// Extracts only the media list. Visible for tests.
+        /// </summary>
+        internal static IReadOnlyList<ArticleMedia> ExtractMedia(string html, string articleUrl) =>
+            ExtractBody(html, articleUrl).Media;
+
+        /// <summary>
+        /// Extracts the article body from a full page. Visible for tests.
+        /// </summary>
+        internal static IReadOnlyList<string> ExtractParagraphs(string html) =>
+            ExtractBody(html, null).Paragraphs;
+
+        private static ExtractedBody BuildBody(
+            IElement? container,
+            List<string> paragraphs,
+            string? articleUrl,
+            IReadOnlyList<ArticleMedia> structuredMedia)
         {
+            var limited = Limit(paragraphs);
+            if (articleUrl is null)
+            {
+                return new ExtractedBody(limited, Array.Empty<ArticleMedia>());
+            }
+
+            var media = container is null
+                ? new List<ArticleMedia>()
+                : ExtractMediaFromContainer(container, articleUrl);
+
+            if (media.Count == 0)
+            {
+                media = structuredMedia.ToList();
+            }
+
+            foreach (var item in media)
+            {
+                item.AfterParagraph = Math.Clamp(item.AfterParagraph, 0, limited.Count);
+            }
+
+            return new ExtractedBody(limited, media.Take(MaxMediaItems).ToList());
+        }
+
+        private static (IElement? Container, List<string> Paragraphs) BestParagraphs(
+            IDocument document,
+            IEnumerable<string> selectors)
+        {
+            IElement? bestContainer = null;
             var best = new List<string>();
             var bestLength = 0;
 
@@ -869,12 +953,13 @@ namespace NewsAggregator.Services
                     if (length > bestLength)
                     {
                         best = paragraphs;
+                        bestContainer = element;
                         bestLength = length;
                     }
                 }
             }
 
-            return best;
+            return (bestContainer, best);
         }
 
         private static List<string> CollectParagraphs(IElement? scope)
@@ -889,21 +974,7 @@ namespace NewsAggregator.Services
 
             foreach (var node in scope.QuerySelectorAll("p"))
             {
-                if (HasNoiseToken(node))
-                {
-                    continue;
-                }
-
-                var text = Clean(node.TextContent);
-                if (text is null ||
-                    text.Length < MinParagraphLength ||
-                    BoilerplateRegex.IsMatch(text) ||
-                    IsMostlyLink(node))
-                {
-                    continue;
-                }
-
-                if (seen.Add(text))
+                if (TryGetParagraphText(node, seen, out var text))
                 {
                     paragraphs.Add(text);
                 }
@@ -912,13 +983,733 @@ namespace NewsAggregator.Services
             return paragraphs;
         }
 
+        private static bool TryGetParagraphText(
+            IElement node,
+            HashSet<string> seen,
+            out string text)
+        {
+            text = string.Empty;
+
+            if (HasNoiseToken(node))
+            {
+                return false;
+            }
+
+            var cleaned = Clean(node.TextContent);
+            if (cleaned is null ||
+                cleaned.Length < MinParagraphLength ||
+                BoilerplateRegex.IsMatch(cleaned) ||
+                IsMostlyLink(node))
+            {
+                return false;
+            }
+
+            if (!seen.Add(cleaned))
+            {
+                return false;
+            }
+
+            text = cleaned;
+            return true;
+        }
+
+        /// <summary>
+        /// Walks the selected body container in document order so each medium keeps
+        /// the position of the paragraphs it appeared between.
+        /// </summary>
+        private static List<ArticleMedia> ExtractMediaFromContainer(
+            IElement container,
+            string articleUrl)
+        {
+            var media = new List<ArticleMedia>();
+            var indexByKey = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var handled = new HashSet<IElement>();
+            var seenParagraphs = new HashSet<string>(StringComparer.Ordinal);
+            var paragraphCount = 0;
+
+            foreach (var element in container.QuerySelectorAll(
+                         "p, figure, picture, img, video, iframe"))
+            {
+                if (HasHandledAncestor(element, handled))
+                {
+                    continue;
+                }
+
+                var localName = element.LocalName.ToLowerInvariant();
+                if (localName == "p")
+                {
+                    if (TryGetParagraphText(element, seenParagraphs, out _))
+                    {
+                        paragraphCount++;
+                    }
+
+                    continue;
+                }
+
+                var candidates = new List<ArticleMedia>();
+                switch (localName)
+                {
+                    case "figure":
+                        AddFigureMedia(element, articleUrl, candidates);
+                        break;
+                    case "picture":
+                        AddPictureMedia(element, articleUrl, candidates);
+                        break;
+                    case "img":
+                        if (TryCreateImageMedia(element, articleUrl, out var image))
+                        {
+                            candidates.Add(image);
+                        }
+
+                        break;
+                    case "video":
+                        if (TryCreateNativeVideoMedia(element, articleUrl, out var video))
+                        {
+                            candidates.Add(video);
+                        }
+
+                        break;
+                    case "iframe":
+                        if (TryCreateVideoEmbedMedia(element, articleUrl, out var embed))
+                        {
+                            candidates.Add(embed);
+                        }
+
+                        break;
+                }
+
+                handled.Add(element);
+
+                foreach (var candidate in candidates)
+                {
+                    candidate.AfterParagraph = paragraphCount;
+                    AddMedia(media, indexByKey, candidate);
+                }
+            }
+
+            return media;
+        }
+
+        private static bool HasHandledAncestor(IElement element, HashSet<IElement> handled)
+        {
+            for (var parent = element.ParentElement; parent is not null; parent = parent.ParentElement)
+            {
+                if (handled.Contains(parent))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static void AddMedia(
+            List<ArticleMedia> media,
+            Dictionary<string, int> indexByKey,
+            ArticleMedia candidate)
+        {
+            var key = GetMediaKey(candidate);
+            if (key is null)
+            {
+                return;
+            }
+
+            if (indexByKey.TryGetValue(key, out var index))
+            {
+                var existing = media[index];
+                if ((candidate.Width ?? 0) >= (existing.Width ?? 0))
+                {
+                    candidate.AfterParagraph = Math.Min(
+                        existing.AfterParagraph,
+                        candidate.AfterParagraph);
+                    media[index] = candidate;
+                }
+
+                return;
+            }
+
+            indexByKey[key] = media.Count;
+            media.Add(candidate);
+        }
+
+        private static string? GetMediaKey(ArticleMedia media)
+        {
+            if (!Uri.TryCreate(media.Url, UriKind.Absolute, out var uri))
+            {
+                return null;
+            }
+
+            return media.Type == "image"
+                ? $"{uri.Host.ToLowerInvariant()}{uri.AbsolutePath.ToLowerInvariant()}"
+                : uri.GetLeftPart(UriPartial.Query).ToLowerInvariant();
+        }
+
+        private static void AddFigureMedia(
+            IElement figure,
+            string articleUrl,
+            List<ArticleMedia> media)
+        {
+            var caption = CleanCaption(figure.QuerySelector("figcaption")?.TextContent);
+
+            var image = figure.QuerySelector("img");
+            if (image is not null && TryCreateImageMedia(image, articleUrl, out var imageMedia))
+            {
+                if (caption is not null)
+                {
+                    imageMedia.Caption = caption;
+                }
+
+                media.Add(imageMedia);
+                return;
+            }
+
+            var video = figure.QuerySelector("video");
+            if (video is not null &&
+                TryCreateNativeVideoMedia(video, articleUrl, out var videoMedia))
+            {
+                if (caption is not null)
+                {
+                    videoMedia.Caption = caption;
+                }
+
+                media.Add(videoMedia);
+                return;
+            }
+
+            var iframe = figure.QuerySelector("iframe");
+            if (iframe is not null &&
+                TryCreateVideoEmbedMedia(iframe, articleUrl, out var embedMedia))
+            {
+                if (caption is not null)
+                {
+                    embedMedia.Caption = caption;
+                }
+
+                media.Add(embedMedia);
+            }
+        }
+
+        private static void AddPictureMedia(
+            IElement picture,
+            string articleUrl,
+            List<ArticleMedia> media)
+        {
+            var image = picture.QuerySelector("img");
+            if (image is not null && TryCreateImageMedia(image, articleUrl, out var imageMedia))
+            {
+                media.Add(imageMedia);
+                return;
+            }
+
+            var source = picture.QuerySelector("source[srcset], source[data-srcset]");
+            if (source is null)
+            {
+                return;
+            }
+
+            var raw = ChooseFromSourceSet(
+                FirstNonEmptyAttribute(source, ImageSourceSetAttributes));
+
+            if (TryCreateImageMedia(
+                    raw,
+                    null,
+                    null,
+                    null,
+                    null,
+                    articleUrl,
+                    out var sourceMedia))
+            {
+                media.Add(sourceMedia);
+            }
+        }
+
+        private static bool TryCreateImageMedia(
+            IElement image,
+            string articleUrl,
+            out ArticleMedia media)
+        {
+            var alt = CleanCaption(image.GetAttribute("alt"));
+            var raw = ChooseFromSourceSet(
+                          FirstNonEmptyAttribute(image, ImageSourceSetAttributes))
+                      ?? FirstNonEmptyAttribute(image, ImageSourceAttributes);
+
+            return TryCreateImageMedia(
+                raw,
+                alt,
+                alt,
+                ParseDimension(image.GetAttribute("width")),
+                ParseDimension(image.GetAttribute("height")),
+                articleUrl,
+                out media);
+        }
+
+        private static bool TryCreateImageMedia(
+            string? rawUrl,
+            string? alt,
+            string? caption,
+            int? width,
+            int? height,
+            string articleUrl,
+            out ArticleMedia media)
+        {
+            media = new ArticleMedia();
+
+            var url = ResolveMediaUrl(rawUrl, articleUrl);
+            if (url is null ||
+                IsJunkMediaUrl(url) ||
+                IsTinyDimension(width, height))
+            {
+                return false;
+            }
+
+            media = new ArticleMedia
+            {
+                Type = "image",
+                Url = url,
+                Alt = CleanCaption(alt),
+                Caption = CleanCaption(caption),
+                Width = width,
+                Height = height
+            };
+
+            return true;
+        }
+
+        private static bool TryCreateNativeVideoMedia(
+            IElement video,
+            string articleUrl,
+            out ArticleMedia media)
+        {
+            media = new ArticleMedia();
+
+            var raw = video.GetAttribute("src")
+                      ?? video.QuerySelector("source[src]")?.GetAttribute("src");
+            var url = ResolveMediaUrl(raw, articleUrl);
+            if (url is null || IsJunkMediaUrl(url))
+            {
+                return false;
+            }
+
+            var poster = ResolveMediaUrl(video.GetAttribute("poster"), articleUrl);
+            if (poster is not null && IsJunkMediaUrl(poster))
+            {
+                poster = null;
+            }
+
+            media = new ArticleMedia
+            {
+                Type = "video",
+                Provider = "native",
+                Url = url,
+                PosterUrl = poster,
+                Caption = CleanCaption(video.GetAttribute("title"))
+                          ?? CleanCaption(video.GetAttribute("aria-label"))
+            };
+
+            return true;
+        }
+
+        private static bool TryCreateVideoEmbedMedia(
+            IElement iframe,
+            string articleUrl,
+            out ArticleMedia media)
+        {
+            media = new ArticleMedia();
+
+            if (!TryResolveVideoProvider(
+                    iframe.GetAttribute("src"),
+                    articleUrl,
+                    out var provider,
+                    out var watchUrl))
+            {
+                return false;
+            }
+
+            media = new ArticleMedia
+            {
+                Type = "videoEmbed",
+                Provider = provider,
+                Url = watchUrl,
+                Caption = CleanCaption(iframe.GetAttribute("title"))
+            };
+
+            return true;
+        }
+
+        private static IReadOnlyList<ArticleMedia> ExtractStructuredMedia(
+            IDocument document,
+            string articleUrl)
+        {
+            var image = document.QuerySelector(
+                "meta[property='og:image'], meta[name='og:image'], " +
+                "meta[name='twitter:image'], meta[property='twitter:image']");
+
+            if (image is not null)
+            {
+                var width = ReadMetaDimension(document, "og:image:width", "twitter:image:width");
+                var height = ReadMetaDimension(document, "og:image:height", "twitter:image:height");
+
+                if (TryCreateImageMedia(
+                        image.GetAttribute("content"),
+                        null,
+                        null,
+                        width,
+                        height,
+                        articleUrl,
+                        out var openGraph))
+                {
+                    return new[] { openGraph };
+                }
+            }
+
+            var jsonLdUrl = ExtractJsonLdImage(document);
+            if (jsonLdUrl is not null &&
+                TryCreateImageMedia(
+                    jsonLdUrl,
+                    null,
+                    null,
+                    null,
+                    null,
+                    articleUrl,
+                    out var structured))
+            {
+                return new[] { structured };
+            }
+
+            return Array.Empty<ArticleMedia>();
+        }
+
+        private static int? ReadMetaDimension(IDocument document, params string[] names)
+        {
+            foreach (var name in names)
+            {
+                var meta = document.QuerySelector(
+                    $"meta[property='{name}'], meta[name='{name}']");
+
+                var dimension = ParseDimension(meta?.GetAttribute("content"));
+                if (dimension is not null)
+                {
+                    return dimension;
+                }
+            }
+
+            return null;
+        }
+
+        private static string? ExtractJsonLdImage(IDocument document)
+        {
+            foreach (var script in document.QuerySelectorAll("script[type='application/ld+json']"))
+            {
+                JsonDocument json;
+                try
+                {
+                    json = JsonDocument.Parse(script.TextContent);
+                }
+                catch (JsonException)
+                {
+                    continue;
+                }
+
+                using (json)
+                {
+                    foreach (var node in EnumerateJsonLdNodes(json.RootElement))
+                    {
+                        if (node.ValueKind != JsonValueKind.Object)
+                        {
+                            continue;
+                        }
+
+                        foreach (var property in new[] { "image", "thumbnailUrl" })
+                        {
+                            if (!node.TryGetProperty(property, out var value))
+                            {
+                                continue;
+                            }
+
+                            var url = ReadImageUrl(value);
+                            if (!string.IsNullOrWhiteSpace(url))
+                            {
+                                return url;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static string? ReadImageUrl(JsonElement value)
+        {
+            switch (value.ValueKind)
+            {
+                case JsonValueKind.String:
+                    return value.GetString();
+
+                case JsonValueKind.Object:
+                    return GetString(value, "url") ?? GetString(value, "contentUrl");
+
+                case JsonValueKind.Array:
+                    foreach (var item in value.EnumerateArray())
+                    {
+                        var url = ReadImageUrl(item);
+                        if (!string.IsNullOrWhiteSpace(url))
+                        {
+                            return url;
+                        }
+                    }
+
+                    return null;
+
+                default:
+                    return null;
+            }
+        }
+
+        private static bool TryResolveVideoProvider(
+            string? rawUrl,
+            string? articleUrl,
+            out string provider,
+            out string watchUrl)
+        {
+            provider = string.Empty;
+            watchUrl = string.Empty;
+
+            var resolved = ResolveMediaUrl(rawUrl, articleUrl);
+            if (resolved is null ||
+                !Uri.TryCreate(resolved, UriKind.Absolute, out var uri))
+            {
+                return false;
+            }
+
+            var host = TrimWww(uri.Host).ToLowerInvariant();
+            string? id = null;
+
+            if (host is "youtube.com" or "m.youtube.com" or "youtube-nocookie.com")
+            {
+                var path = uri.AbsolutePath;
+                if (path.StartsWith("/embed/", StringComparison.OrdinalIgnoreCase) ||
+                    path.StartsWith("/shorts/", StringComparison.OrdinalIgnoreCase))
+                {
+                    id = path.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+                }
+                else if (path.Equals("/watch", StringComparison.OrdinalIgnoreCase))
+                {
+                    id = GetQueryValue(uri.Query, "v");
+                }
+            }
+            else if (host == "youtu.be")
+            {
+                id = uri.AbsolutePath.Trim('/');
+            }
+
+            if (id is not null && IsSafeYouTubeId(id))
+            {
+                provider = "youtube";
+                watchUrl = $"https://www.youtube.com/watch?v={id}";
+                return true;
+            }
+
+            if (host is "vimeo.com" or "www.vimeo.com" or "player.vimeo.com")
+            {
+                id = uri.AbsolutePath
+                    .Split('/', StringSplitOptions.RemoveEmptyEntries)
+                    .LastOrDefault();
+
+                if (id is not null && id.All(char.IsDigit))
+                {
+                    provider = "vimeo";
+                    watchUrl = $"https://vimeo.com/{id}";
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsSafeYouTubeId(string id) =>
+            id.Length >= 6 &&
+            id.All(character =>
+                char.IsLetterOrDigit(character) ||
+                character is '-' or '_');
+
+        private static string? GetQueryValue(string query, string name)
+        {
+            foreach (var pair in query.TrimStart('?')
+                         .Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var parts = pair.Split('=', 2);
+                if (parts.Length == 2 &&
+                    Uri.UnescapeDataString(parts[0]).Equals(name, StringComparison.Ordinal))
+                {
+                    return Uri.UnescapeDataString(parts[1]);
+                }
+            }
+
+            return null;
+        }
+
+        private static string? ResolveMediaUrl(string? value, string? articleUrl)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+
+            var raw = value.Trim();
+            if (raw.StartsWith("data:", StringComparison.OrdinalIgnoreCase) ||
+                raw.StartsWith("javascript:", StringComparison.OrdinalIgnoreCase) ||
+                raw.StartsWith("blob:", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            if (Uri.TryCreate(raw, UriKind.Absolute, out var absolute) &&
+                absolute.Scheme is "http" or "https")
+            {
+                return absolute.ToString();
+            }
+
+            if (articleUrl is null ||
+                !Uri.TryCreate(articleUrl, UriKind.Absolute, out var baseUri))
+            {
+                return null;
+            }
+
+            return Uri.TryCreate(baseUri, raw, out var resolved) &&
+                   resolved.Scheme is "http" or "https"
+                ? resolved.ToString()
+                : null;
+        }
+
+        private static bool IsJunkMediaUrl(string url) =>
+            url.EndsWith(".svg", StringComparison.OrdinalIgnoreCase) ||
+            MediaUrlNoiseTokens.Any(token =>
+                url.Contains(token, StringComparison.OrdinalIgnoreCase));
+
+        private static bool IsTinyDimension(int? width, int? height) =>
+            (width is > 0 and < MinMediaDimension) ||
+            (height is > 0 and < MinMediaDimension);
+
+        private static string? FirstNonEmptyAttribute(
+            IElement element,
+            IEnumerable<string> attributes)
+        {
+            foreach (var attribute in attributes)
+            {
+                var value = element.GetAttribute(attribute);
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value.Trim();
+                }
+            }
+
+            return null;
+        }
+
+        private static string? ChooseFromSourceSet(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+
+            string? best = null;
+            var bestScore = -1d;
+
+            foreach (var candidate in value.Split(','))
+            {
+                var trimmed = candidate.Trim();
+                if (trimmed.Length == 0)
+                {
+                    continue;
+                }
+
+                var parts = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 0)
+                {
+                    continue;
+                }
+
+                var url = parts[0];
+                var score = 1d;
+
+                if (parts.Length > 1)
+                {
+                    var descriptor = parts[^1];
+                    if (descriptor.EndsWith("w", StringComparison.OrdinalIgnoreCase) &&
+                        double.TryParse(
+                            descriptor[..^1],
+                            NumberStyles.Float,
+                            CultureInfo.InvariantCulture,
+                            out var width))
+                    {
+                        score = width;
+                    }
+                    else if (descriptor.EndsWith("x", StringComparison.OrdinalIgnoreCase) &&
+                             double.TryParse(
+                                 descriptor[..^1],
+                                 NumberStyles.Float,
+                                 CultureInfo.InvariantCulture,
+                                 out var density))
+                    {
+                        score = density * 1000;
+                    }
+                }
+
+                if (score >= bestScore)
+                {
+                    bestScore = score;
+                    best = url;
+                }
+            }
+
+            return best;
+        }
+
+        private static int? ParseDimension(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+
+            var digits = new string(value.TakeWhile(char.IsDigit).ToArray());
+            return int.TryParse(
+                digits,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var dimension) && dimension > 0
+                ? dimension
+                : null;
+        }
+
+        private static string? CleanCaption(string? value)
+        {
+            var cleaned = Clean(value);
+            if (cleaned is null || cleaned.Length <= MaxCaptionLength)
+            {
+                return cleaned;
+            }
+
+            return cleaned[..MaxCaptionLength].Trim();
+        }
+
+        /// <summary>
+        /// Internal result of the body extraction: paragraphs for reading and media
+        /// metadata with its position. Visible for tests.
+        /// </summary>
+        internal sealed record ExtractedBody(
+            IReadOnlyList<string> Paragraphs,
+            IReadOnlyList<ArticleMedia> Media);
+
         /// <summary>
         /// Removes navigation, sharing widgets, comment sections and other page chrome
         /// so they never end up inside the article body. Known body containers (and
         /// their ancestors) are protected: some sites wrap the note in elements with
         /// misleading names such as "sidebar__main".
         /// </summary>
-        private static void RemoveNoise(IDocument document)
+        private static void RemoveNoise(IDocument document, string? articleUrl = null)
         {
             var protectedNodes = new HashSet<INode>();
 
@@ -936,11 +1727,26 @@ namespace NewsAggregator.Services
             }
 
             var junk = document.QuerySelectorAll(
-                "script, style, noscript, template, svg, iframe, nav, footer, aside, form, button");
+                "script, style, noscript, template, svg, nav, footer, aside, form, button");
 
             foreach (var element in junk.ToList())
             {
                 element.Remove();
+            }
+
+            // Video embeds are article content; every other iframe is page chrome.
+            foreach (var iframe in document.QuerySelectorAll("iframe").ToList())
+            {
+                var isVideo = TryResolveVideoProvider(
+                    iframe.GetAttribute("src"),
+                    articleUrl,
+                    out _,
+                    out _);
+
+                if (!isVideo)
+                {
+                    iframe.Remove();
+                }
             }
 
             foreach (var element in document.QuerySelectorAll("[class], [id]").ToList())

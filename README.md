@@ -9,6 +9,7 @@ Agregador de noticias que reúne los principales titulares de los diarios argent
 - Extracción mediante HTML estático y fallback a un navegador Chromium headless para los sitios que renderizan con JavaScript.
 - Caché en memoria de 5 minutos para los titulares y de 30 minutos para el cuerpo de cada nota.
 - Lectura completa de la nota dentro de la propia interfaz, extrayendo y limpiando los párrafos del artículo original.
+- Imágenes y videos opcionales dentro de la nota. El lector los muestra solo si activa "Ver imágenes y videos" y recuerda la elección en el dispositivo; con la opción apagada no se descarga ningún medio. Las imágenes se piden directo al CDN del medio sin `Referer`, y YouTube/Vimeo se abren en el proveedor.
 - Reproducción por voz de la nota completa con pausa y velocidad. En Chrome y el resto se usa la voz del navegador; en Firefox, una voz neuronal generada localmente por la API.
 - Resumen de la nota a pedido, generado con un modelo local (`gemma4:e2b` en Ollama) y guardado en disco: una vez generado se muestra directamente y no se vuelve a resumir.
 - Autor de la nota cuando el medio lo publica (se omite si la firma es solo el nombre del diario).
@@ -206,7 +207,7 @@ Después entrá a `http://localhost:5173` en tu navegador. Tené en cuenta que `
 | --- | --- | --- |
 | `GET` | `/api/news` | Devuelve los titulares agregados (caché de 5 minutos). |
 | `GET` | `/api/news?refresh=true` | Fuerza la re-descarga de todas las fuentes. |
-| `GET` | `/api/news/content?url={url}` | Extrae el autor y el cuerpo completo de una nota. Solo acepta URLs de las fuentes configuradas. |
+| `GET` | `/api/news/content?url={url}` | Extrae el autor, el cuerpo completo y los medios opcionales de una nota. Solo acepta URLs de las fuentes configuradas. |
 | `GET` | `/api/news/audio?url={url}&part=title\|attribution\|body&index={n}` | Devuelve el audio local de un segmento de la nota (Firefox). Requiere `make install-tts`. |
 | `GET` | `/api/news/summary?url={url}` | Devuelve el resumen guardado de una nota o 404 si todavía no existe. |
 | `POST` | `/api/news/summary?url={url}` | Genera y guarda el resumen; si ya existe, devuelve el guardado sin llamar al modelo. |
@@ -236,6 +237,16 @@ Respuesta (fragmento):
 ```
 
 La caché de titulares se puede saltear con `refresh=true`; si todas las fuentes fallan, la API devuelve la última respuesta válida que tenga en memoria.
+
+### Imágenes y videos
+
+`/api/news/content` devuelve, además de `paragraphs`, una lista `media` con las imágenes y videos que el medio publica dentro del cuerpo. Cada elemento incluye `afterParagraph`, que indica después de cuántos párrafos aparece, más `url`, `caption`, `alt`, dimensiones y, para video, `provider`.
+
+La extracción cubre `figure` con `figcaption`, `img` con `alt`, `srcset` y atributos lazy, y usa `og:image` o la imagen del JSON-LD como respaldo. Descarta pixeles de seguimiento, logos, placeholders, publicidad y archivos menores a 200 px; devuelve como máximo 12 medios por nota.
+
+El lector arranca con los medios ocultos. El botón "Ver imágenes y videos" los muestra y guarda la preferencia en `localStorage`; con la opción apagada no se genera ningún pedido de imagen. Los videos nativos se reproducen con controles y sin precarga; YouTube y Vimeo se abren en el proveedor, sin iframes.
+
+La carga de imágenes es directa desde el CDN del medio, con `Referrer-Policy: no-referrer`. El servidor no descarga ni cachea binarios. Esto implica que el CDN del medio ve la IP del lector cuando activa las imágenes; si en el futuro aparecen bloqueos por hotlink, la API puede pasar a servir URLs proxeadas sin cambios en el frontend.
 
 ### Historias y cobertura
 
